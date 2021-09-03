@@ -120,6 +120,18 @@ def vector_quantize(x, codebook):
     x_q = F.one_hot(indices, codebook.shape[0]).to(d.dtype) @ codebook
     return replace_grad(x_q, x)
 
+class PromptStr(str):
+    '''P = PromptStr
+    P("ayy")[3] | "lmao" | P("trending on artstationHQ")[.2]
+    '''
+    def __or__(self, other):
+    
+        return PromptStr(" | ".join([self, other]))
+
+    def __getitem__(self, idx):
+        return PromptStr(self + ":" + str(idx))
+
+
 
 
 class Prompt(nn.Module):
@@ -553,7 +565,7 @@ class Spacewalker(object):
             
 #https://github.com/nerdyrodent/VQGAN-CLIP/blob/main/generate.py         
 class MakeCutouts(nn.Module):
-    def __init__(self, cut_size, cutn, cut_pow=1., augments=None):
+    def __init__(self, cut_size, cutn, cut_pow=1., augments=None, noise_fac=0.1):
         super().__init__()
         self.cut_size = cut_size
         self.cutn = cutn
@@ -610,7 +622,7 @@ class MakeCutouts(nn.Module):
             )
         '''
             
-        self.noise_fac = 0.1
+        self.noise_fac = noise_fac
         # self.noise_fac = False
         
         # Pooling
