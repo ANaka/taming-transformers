@@ -30,6 +30,7 @@ from tqdm.notebook import tqdm
 import signal
 import fn
 
+
 class GracefulExiter():
     # definitely jacked this from somewhere on stack overflow
     def __init__(self):
@@ -46,21 +47,14 @@ class GracefulExiter():
 
 def default_field(obj):
     return field(default_factory=lambda: copy.deepcopy(obj))
-try:
-    _models_dir = Path(taming.models.__path__[0])
-except:
-    pass
-    
 
 def sinc(x):
     return torch.where(x != 0, torch.sin(math.pi * x) / (math.pi * x), x.new_ones([]))
- 
  
 def lanczos(x, a):
     cond = torch.logical_and(-a < x, x < a)
     out = torch.where(cond, sinc(x) * sinc(x/a), x.new_zeros([]))
     return out / out.sum()
- 
  
 def ramp(ratio, width):
     n = math.ceil(width / ratio + 1)
@@ -70,7 +64,6 @@ def ramp(ratio, width):
         out[i] = cur
         cur += ratio
     return torch.cat([-out[1:].flip([0]), out])[1:-1]
- 
  
 def resample(input, size, align_corners=True):
     n, c, h, w = input.shape
@@ -93,7 +86,6 @@ def resample(input, size, align_corners=True):
     input = input.view([n, c, h, w])
     return F.interpolate(input, size, mode='bicubic', align_corners=align_corners)
  
- 
 class ReplaceGrad(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x_forward, x_backward):
@@ -103,21 +95,8 @@ class ReplaceGrad(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_in):
         return None, grad_in.sum_to_size(ctx.shape)
- 
- 
-replace_grad = ReplaceGrad.apply
- 
-class PromptStr(str):
-
-  def __or__(self, other):
     
-    return PromptStr(" | ".join([self, other]))
-
-  def __getitem__(self, idx):
-    return PromptStr(self + ":" + str(idx))
-
-P = PromptStr
-P("ayy")[3] | "lmao" | P("trending on artstationHQ")[.2]
+replace_grad = ReplaceGrad.apply
  
 class ClampWithGrad(torch.autograd.Function):
     @staticmethod
@@ -135,14 +114,14 @@ class ClampWithGrad(torch.autograd.Function):
  
 clamp_with_grad = ClampWithGrad.apply
  
- 
 def vector_quantize(x, codebook):
     d = x.pow(2).sum(dim=-1, keepdim=True) + codebook.pow(2).sum(dim=1) - 2 * x @ codebook.T
     indices = d.argmin(-1)
     x_q = F.one_hot(indices, codebook.shape[0]).to(d.dtype) @ codebook
     return replace_grad(x_q, x)
- 
- 
+
+
+
 class Prompt(nn.Module):
     def __init__(self, embed, weight=1., stop=float('-inf')):
         super().__init__()
@@ -156,14 +135,46 @@ class Prompt(nn.Module):
         dists = input_normed.sub(embed_normed).norm(dim=2).div(2).arcsin().pow(2).mul(2)
         dists = dists * self.weight.sign()
         return self.weight.abs() * replace_grad(dists, torch.maximum(dists, self.stop)).mean()
- 
- 
+
 def parse_prompt(prompt):
     vals = prompt.rsplit(':', 2)
     vals = vals + ['', '1', '-inf'][len(vals):]
     return vals[0], float(vals[1]), float(vals[2])
  
-
+class MakeCutouts(nn.Module):
+    def __init__(self, cut_size, cutn, cut_pow=1., noise_fac=0.1):
+        super().__init__()
+        self.cut_size = cut_size
+        self.cutn = cutn
+        self.cut_pow = cut_pow
+        self.augs = nn.Sequential(
+            K.RandomHorizontalFlip(p=0.5),
+            # K.RandomSolarize(0.01, 0.01, p=0.7),
+            K.RandomSharpness(0.3,p=0.4),
+            K.RandomAffine(degrees=30, translate=0.1, p=0.8, padding_mode='border'),
+            K.RandomPerspective(0.2,p=0.4),
+            K.ColorJitter(hue=0.01, saturation=0.01, p=0.7),
+#             K.ColorJitter(hue=0.01, saturation=0.01, p=0.2),
+        )
+        self.noise_fac = noise_fac
+ 
+ 
+    def forward(self, input):
+        sideY, sideX = input.shape[2:4]
+        max_size = min(sideX, sideY)
+        min_size = min(sideX, sideY, self.cut_size)
+        cutouts = []
+        for _ in range(self.cutn):
+            size = int(torch.rand([])**self.cut_pow * (max_size - min_size) + min_size)
+            offsetx = torch.randint(0, sideX - size + 1, ())
+            offsety = torch.randint(0, sideY - size + 1, ())
+            cutout = input[:, :, offsety:offsety + size, offsetx:offsetx + size]
+            cutouts.append(resample(cutout, (self.cut_size, self.cut_size)))
+        batch = self.augs(torch.cat(cutouts, dim=0))
+        if self.noise_fac:
+            facs = batch.new_empty([self.cutn, 1, 1, 1]).uniform_(0, self.noise_fac)
+            batch = batch + facs * torch.randn_like(batch)
+        return batch
  
  
 def _load_vqgan_model(config_path, checkpoint_path):
@@ -184,10 +195,11 @@ def _load_vqgan_model(config_path, checkpoint_path):
 
 def load_vqgan_model(
     model_name='vqgan_imagenet_f16_16384',
-    models_dir=None,
+    models_dir='',
     ):
     if models_dir is None:
         models_dir = _models_dir
+
     models_dir = Path(models_dir)
     return _load_vqgan_model(
         config_path=models_dir.joinpath(f'{model_name}.yaml'),
@@ -222,16 +234,26 @@ def empty_ram():
 @dataclass
 class LatentSpacewalkParameters(object):
     texts: list = field(default_factory=list)
+    init_from_last_saved_image: bool = True
     initial_image: str = None
     target_images:list = field(default_factory=list)
     seed: int = None
     max_iterations: int = None
-    learning_rate: float = 0.2
+    learning_rate: float = 0.15
     save_interval: int = 1
-    zoom_interval: int = None
     display_interval: int = 3
     init_weight:int = 0
-    init_from_last_saved_image:bool =True
+    zoom_interval: int = None
+    n_pixels_zoom: int = 10
+    pan_interval: int = None
+    x_pan_pixels: int = 10
+    y_pan_pixels: int = 10
+    pan_padding_mode: str = 'edge'
+    pan_fill: int = 0
+    noise_fac:float = 0.1
+    apply_mask: bool = False
+    save: bool = True
+    display:bool = True
     
     def __post_init__(self):
         self.texts = [phrase.strip() for phrase in self.texts]
@@ -254,7 +276,7 @@ class Spacewalker(object):
         cut_pow: float = 1.,
         width: int = 640,
         height: int = 480,
-        root_savedir: str = '/home/naka/art/latent_spacewalker',
+        root_savedir: str = 'steps',
         nft_id:str = None,
         models_dir='', # '/content/drive/MyDrive/vqgan_models'
         ):
@@ -267,32 +289,39 @@ class Spacewalker(object):
         self.vqgan_model_name = vqgan_model_name
         self.models_dir = models_dir
         if nft_id is None:
-            self.nft_id = fn.new_nft_id()
+            try:
+                self.nft_id = fn.new_nft_id()
+            except:
+                self.nft_id = fn.Fn().name
         self.root_savedir = Path(root_savedir)
         self.image_savedir = self.root_savedir.joinpath(f'{self.nft_id}')
         os.makedirs(self.image_savedir, exist_ok=True)
         
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        self.model = load_vqgan_model(model_name=vqgan_model_name).to(self.device)
+        self.model = load_vqgan_model(model_name=vqgan_model_name, models_dir=self.models_dir).to(self.device)
         self.perceptor = load_clip_model().to(self.device)
         
         
         cut_size = self.perceptor.visual.input_resolution
         self.e_dim = self.model.quantize.e_dim
         f = 2**(self.model.decoder.num_resolutions - 1)
-        self.make_cutouts = MakeCutouts(cut_size, self.cutn, cut_pow=self.cut_pow)
+        self.make_cutouts = MakeCutouts(cut_size, self.cutn, cut_pow=self.cut_pow, noise_fac=self.p.noise_fac)
         self.n_toks = self.model.quantize.n_e
         self.toksX, self.toksY = self.width // f, self.height // f
         self.sideX, self.sideY = self.toksX * f, self.toksY * f
         self.z_min = self.model.quantize.embedding.weight.min(dim=0).values[None, :, None, None]
         self.z_max = self.model.quantize.embedding.weight.max(dim=0).values[None, :, None, None]
+        
         self.normalize = transforms.Normalize(mean=[0.48145466, 0.4578275, 0.40821073],
                                     std=[0.26862954, 0.26130258, 0.27577711])
-        
-        
-        
+        self.cropper = transforms.functional.crop
+        self.padder = transforms.functional.pad
         self.ii = 0
         self.last_saved_filename = None
+        self.mask = torch.tensor(np.ones((self.sideY, self.sideX))).float().to(self.device)
+        
+    def reset_mask(self):
+        self.mask = torch.tensor(np.ones((self.sideY, self.sideX))).float().to(self.device)
         
     @property
     def size(self):
@@ -391,9 +420,9 @@ class Spacewalker(object):
     def checkin(self, losses):
         losses_str = ', '.join(f'{loss.item():g}' for loss in losses)
         tqdm.write(f'i: {self.ii}, loss: {sum(losses).item():g}, losses: {losses_str}')
-        out = self.synth(self.z_current)
-        TF.to_pil_image(out[0].cpu()).save('progress.png', pnginfo=self.png_metadata)
-        display.display(display.Image('progress.png'))
+        self.out_img.save('progress.png', pnginfo=self.png_metadata)
+        if self.p.display:
+            display.display(display.Image('progress.png'))
     
     @property
     def longname(self):
@@ -402,7 +431,7 @@ class Spacewalker(object):
     def ascend_txt(self):
         
         out = self.synth(self.z_current)
-        
+        out = out * self.mask
         iii = self.perceptor.encode_image(self.normalize(self.make_cutouts(out))).float()
 
         result = []
@@ -416,26 +445,68 @@ class Spacewalker(object):
         if self.ii % self.p.save_interval == 0:
             img = np.array(out.mul(255).clamp(0, 255)[0].cpu().detach().numpy().astype(np.uint8))[:,:,:]
             img = np.transpose(img, (1, 2, 0))
-            filename = self.image_savedir.joinpath(f'{self.longname}{self.ii:04}.png')
-            imageio.imwrite(filename, np.array(img))
-            self.last_saved_filename = filename.as_posix()
+            filename = self.image_savedir.joinpath(f'{self.ii:04}-{self.longname}.png')
+            if self.p.save:
+                imageio.imwrite(filename, np.array(img))
+                self.last_saved_filename = filename.as_posix()
             self.t = out
-            self.img = img
+            self._img = img
             
         return result
     
     @property
-    def pil_img(self):
-        return TF.to_pil_image(self.img.cpu())
+    def img(self):
+        return Image.fromarray(self._img)
+    
+    @property
+    def out_img(self):
+        return TF.to_pil_image(self.t[0].cpu())
+    
+    @property
+    def mask_img(self):
+        return TF.to_pil_image(self.mask.cpu())
+    
+    @property
+    def img_array(self):
+        return self.t.cpu().detach().numpy()[0]
+    
+    def get_masked_pixels(self):
+        mask_row_inds, mask_col_inds = np.where(self.mask.cpu())
+        return self.img_array[:, mask_row_inds, mask_col_inds]
+    
+    def reset_optimizer(self):
+        self.z_current.requires_grad_(True)
+        self.opt = optim.Adam([self.z_current], lr=self.p.learning_rate)
+        self.encode_prompts()
     
     def zoom(self):
         with torch.no_grad():
             zoomed_output = self.zoom_transforms(self.synth(self.z_current)) * 2 - 1
             self.z_current, *_ = self.model.encode(zoomed_output)
             self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
-        self.z_current.requires_grad_(True)
-        self.opt = optim.Adam([self.z_current], lr=self.p.learning_rate)
-        self.encode_prompts()
+        self.reset_optimizer()
+        
+    def pan(self):
+        with torch.no_grad():
+            top, left, height, width = self.p.y_pan_pixels, self.p.x_pan_pixels, self.sideY, self.sideX
+            self.pan_params = np.array((top, left, height, width))
+            self.panned_output = self.cropper(self.synth(self.z_current), *self.pan_params)
+            pad_top = np.max((0, -top))
+            pad_bottom = np.max((0, top))
+            pad_left = np.max((0, -left))
+            pad_right = np.max((0, left))
+            self.pad_params = (pad_left, pad_top, pad_right, pad_bottom)
+            self.padded_output = self.padder(self.panned_output, self.pad_params, padding_mode=self.p.pan_padding_mode, fill=self.p.pan_fill)  * 2 - 1
+            self.z_current, *_ = self.model.encode(self.padded_output)
+            self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
+        self.reset_optimizer()    
+        
+    def apply_mask(self):
+        with torch.no_grad():
+            masked_output = self.mask * self.synth(self.z_current) * 2 - 1
+            self.z_current, *_ = self.model.encode(masked_output)
+            self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
+        self.reset_optimizer()
         
     def train(self):
         self.opt.zero_grad()
@@ -454,15 +525,30 @@ class Spacewalker(object):
             self.p = parameters
         self.iter_to_stop_at = self.p.max_iterations + self.ii
         self.initialize()
-        flag = GracefulExiter()
+        self.flag = GracefulExiter()
         while self.ii < self.iter_to_stop_at:
             if self.p.zoom_interval :
                 if self.ii % self.p.zoom_interval == 0:
                     self.zoom()
+            if self.p.pan_interval :
+                if self.ii % self.p.pan_interval == 0:
+                    self.pan()
+            if self.p.apply_mask:
+                self.apply_mask()
+                
             self.train()
             self.ii += 1
-            if flag.exit():
+            if self.flag.exit():
                 break
+                
+    def make_circle_mask(self, radius=30):
+        mask_center = [d//2 for d in self.mask.shape]
+        for row in range(self.mask.shape[0]):
+            for col in range(self.mask.shape[1]):
+                dist = ((row - mask_center[0]) ** 2 + (col - mask_center[1]) ** 2) ** 0.5
+                if dist < radius:
+                    self.mask[row, col] = 0
+
             
             
 #https://github.com/nerdyrodent/VQGAN-CLIP/blob/main/generate.py         
@@ -558,35 +644,35 @@ class MakeCutouts(nn.Module):
     
     
  
-class MakeCutouts(nn.Module):
-    def __init__(self, cut_size, cutn, cut_pow=1.):
-        super().__init__()
-        self.cut_size = cut_size
-        self.cutn = cutn
-        self.cut_pow = cut_pow
-        self.augs = nn.Sequential(
-            K.RandomHorizontalFlip(p=0.5),
-            # K.RandomSolarize(0.01, 0.01, p=0.7),
-            K.RandomSharpness(0.3,p=0.4),
-            K.RandomAffine(degrees=30, translate=0.1, p=0.8, padding_mode='border'),
-            K.RandomPerspective(0.2,p=0.4),
-            K.ColorJitter(hue=0.01, saturation=0.01, p=0.7))
-        self.noise_fac = 0.1
+# class MakeCutouts(nn.Module):
+#     def __init__(self, cut_size, cutn, cut_pow=1.):
+#         super().__init__()
+#         self.cut_size = cut_size
+#         self.cutn = cutn
+#         self.cut_pow = cut_pow
+#         self.augs = nn.Sequential(
+#             K.RandomHorizontalFlip(p=0.5),
+#             # K.RandomSolarize(0.01, 0.01, p=0.7),
+#             K.RandomSharpness(0.3,p=0.4),
+#             K.RandomAffine(degrees=30, translate=0.1, p=0.8, padding_mode='border'),
+#             K.RandomPerspective(0.2,p=0.4),
+#             K.ColorJitter(hue=0.01, saturation=0.01, p=0.7))
+#         self.noise_fac = 0.1
  
  
-    def forward(self, input):
-        sideY, sideX = input.shape[2:4]
-        max_size = min(sideX, sideY)
-        min_size = min(sideX, sideY, self.cut_size)
-        cutouts = []
-        for _ in range(self.cutn):
-            size = int(torch.rand([])**self.cut_pow * (max_size - min_size) + min_size)
-            offsetx = torch.randint(0, sideX - size + 1, ())
-            offsety = torch.randint(0, sideY - size + 1, ())
-            cutout = input[:, :, offsety:offsety + size, offsetx:offsetx + size]
-            cutouts.append(resample(cutout, (self.cut_size, self.cut_size)))
-        batch = self.augs(torch.cat(cutouts, dim=0))
-        if self.noise_fac:
-            facs = batch.new_empty([self.cutn, 1, 1, 1]).uniform_(0, self.noise_fac)
-            batch = batch + facs * torch.randn_like(batch)
-        return batch
+#     def forward(self, input):
+#         sideY, sideX = input.shape[2:4]
+#         max_size = min(sideX, sideY)
+#         min_size = min(sideX, sideY, self.cut_size)
+#         cutouts = []
+#         for _ in range(self.cutn):
+#             size = int(torch.rand([])**self.cut_pow * (max_size - min_size) + min_size)
+#             offsetx = torch.randint(0, sideX - size + 1, ())
+#             offsety = torch.randint(0, sideY - size + 1, ())
+#             cutout = input[:, :, offsety:offsety + size, offsetx:offsetx + size]
+#             cutouts.append(resample(cutout, (self.cut_size, self.cut_size)))
+#         batch = self.augs(torch.cat(cutouts, dim=0))
+#         if self.noise_fac:
+#             facs = batch.new_empty([self.cutn, 1, 1, 1]).uniform_(0, self.noise_fac)
+#             batch = batch + facs * torch.randn_like(batch)
+#         return batch
