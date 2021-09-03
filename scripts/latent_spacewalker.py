@@ -594,7 +594,7 @@ class CutoutParams(object):
         'sharpness': 0.4,
         'p': 0.7,
     })
-    random_gaussian: dict = default_field({
+    random_gaussian_noise: dict = default_field({
         'use': True,
         'mean': 0.0,
         'std': 1.,
