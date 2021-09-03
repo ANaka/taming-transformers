@@ -326,7 +326,7 @@ class Spacewalker(object):
         self.e_dim = self.model.quantize.e_dim
         f = 2**(self.model.decoder.num_resolutions - 1)
         self.make_cutouts = MakeCutouts(
-            cutout_params=self.p.cutout_params, 
+            cutout_params=self.p.cutout_params.prms, 
             cut_size=cut_size, 
             cutn=self.cutn, 
             cut_pow=self.cut_pow, 
@@ -663,7 +663,7 @@ class MakeCutouts(nn.Module):
             if aug_settings['use']:
                 params = {key: value for key, value in aug_settings.items() if key != 'use'}
                 func_name = ''.join([c.capitalize() for c in aug_name.split('_')])
-                aug = getattr(K, aug_name)(**params)
+                aug = getattr(K, func_name)(**params)
                 augment_list.append(aug)
             
         # print(augment_list)
