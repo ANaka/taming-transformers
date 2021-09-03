@@ -574,6 +574,7 @@ class MakeCutouts(nn.Module):
             augments = [
                 'Ji', 'Sh', 'Gn', 'Pe', 'Ro', 'Af', 'Et', 'Ts', 'Cr', 'Er', 'Re',
             ]
+        self.augments = augments
         
         # Pick your own augments & their order
         augment_list = []
