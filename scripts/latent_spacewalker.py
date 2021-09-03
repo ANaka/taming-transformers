@@ -662,6 +662,7 @@ class MakeCutouts(nn.Module):
         for aug_name, aug_settings in self.cutout_params.items():
             if aug_settings['use']:
                 params = {key: value for key, value in aug_settings.items() if key != 'use'}
+                func_name = ''.join([c.capitalize() for c in aug_name.split('_')])
                 aug = getattr(K, aug_name)(**params)
                 augment_list.append(aug)
             
