@@ -612,10 +612,10 @@ class CutoutParams(object):
     })
     random_affine: dict = default_field({
         'use': True,
-        'degrees': '15', 
-        'translate': '0.1', 
+        'degrees': 15, 
+        'translate': 0.1, 
         'shear': 15, 
-        'p': '0.7', 
+        'p': 0.7, 
         'padding_mode': 'border', 
         'keepdim': True,
     })
