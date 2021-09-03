@@ -658,17 +658,17 @@ class MakeCutouts(nn.Module):
         self.cutout_params['random_resized_crop']['size'] = (self.cut_size,self.cut_size)
         
         # Pick your own augments & their order
-        augment_list = []
+        self.augment_list = []
         for aug_name, aug_settings in self.cutout_params.items():
             if aug_settings['use']:
                 params = {key: value for key, value in aug_settings.items() if key != 'use'}
                 func_name = ''.join([c.capitalize() for c in aug_name.split('_')])
                 aug = getattr(K, func_name)(**params)
-                augment_list.append(aug)
+                self.augment_list.append(aug)
             
         # print(augment_list)
         
-        self.augs = nn.Sequential(*augment_list)
+        self.augs = nn.Sequential(*self.augment_list)
 
         '''
         self.augs = nn.Sequential(
