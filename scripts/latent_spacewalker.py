@@ -46,8 +46,10 @@ class GracefulExiter():
 
 def default_field(obj):
     return field(default_factory=lambda: copy.deepcopy(obj))
-
-_models_dir = Path(taming.models.__path__[0])
+try:
+    _models_dir = Path(taming.models.__path__[0])
+except:
+    pass
     
 
 def sinc(x):
