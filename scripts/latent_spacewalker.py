@@ -1,34 +1,39 @@
 import argparse
+import copy
+import gc
+import json
 import math
-from pathlib import Path
-import sys
-from datetime import datetime
 import os
 import shutil
-from IPython import display
+import signal
+import sys
 from base64 import b64encode
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from pathlib import Path
+
+import clip
+import fn
+import imageio
+import kornia.augmentation as K
+import numpy as np
+import torch
+from IPython import display
 from omegaconf import OmegaConf
-from PIL import Image
+from PIL import Image, ImageFile
 from PIL.PngImagePlugin import PngInfo
 from taming.models import cond_transformer, vqgan
-import torch
 from torch import nn, optim
 from torch.nn import functional as F
 from torchvision import transforms
 from torchvision.transforms import functional as TF
-import taming
-import clip
-import kornia.augmentation as K
-import numpy as np
-import imageio
-from PIL import ImageFile, Image
-import json
-import gc
-from dataclasses import dataclass, field, asdict
-import copy
 from tqdm.notebook import tqdm
-import signal
-import fn
+
+import taming
+
+
+def default_field(obj):
+    return field(default_factory=lambda: copy.deepcopy(obj))
 
 
 class GracefulExiter():
@@ -153,40 +158,40 @@ def parse_prompt(prompt):
     vals = vals + ['', '1', '-inf'][len(vals):]
     return vals[0], float(vals[1]), float(vals[2])
  
-class MakeCutouts(nn.Module):
-    def __init__(self, cut_size, cutn, cut_pow=1., noise_fac=0.1):
-        super().__init__()
-        self.cut_size = cut_size
-        self.cutn = cutn
-        self.cut_pow = cut_pow
-        self.augs = nn.Sequential(
-            K.RandomHorizontalFlip(p=0.5),
-            # K.RandomSolarize(0.01, 0.01, p=0.7),
-            K.RandomSharpness(0.3,p=0.4),
-            K.RandomAffine(degrees=30, translate=0.1, p=0.8, padding_mode='border'),
-            K.RandomPerspective(0.2,p=0.4),
-            K.ColorJitter(hue=0.01, saturation=0.01, p=0.7),
-#             K.ColorJitter(hue=0.01, saturation=0.01, p=0.2),
-        )
-        self.noise_fac = noise_fac
+# class MakeCutouts(nn.Module):
+#     def __init__(self, cut_size, cutn, cut_pow=1., noise_fac=0.1):
+#         super().__init__()
+#         self.cut_size = cut_size
+#         self.cutn = cutn
+#         self.cut_pow = cut_pow
+#         self.augs = nn.Sequential(
+#             K.RandomHorizontalFlip(p=0.5),
+#             # K.RandomSolarize(0.01, 0.01, p=0.7),
+#             K.RandomSharpness(0.3,p=0.4),
+#             K.RandomAffine(degrees=30, translate=0.1, p=0.8, padding_mode='border'),
+#             K.RandomPerspective(0.2,p=0.4),
+#             K.ColorJitter(hue=0.01, saturation=0.01, p=0.7),
+# #             K.ColorJitter(hue=0.01, saturation=0.01, p=0.2),
+#         )
+#         self.noise_fac = noise_fac
  
  
-    def forward(self, input):
-        sideY, sideX = input.shape[2:4]
-        max_size = min(sideX, sideY)
-        min_size = min(sideX, sideY, self.cut_size)
-        cutouts = []
-        for _ in range(self.cutn):
-            size = int(torch.rand([])**self.cut_pow * (max_size - min_size) + min_size)
-            offsetx = torch.randint(0, sideX - size + 1, ())
-            offsety = torch.randint(0, sideY - size + 1, ())
-            cutout = input[:, :, offsety:offsety + size, offsetx:offsetx + size]
-            cutouts.append(resample(cutout, (self.cut_size, self.cut_size)))
-        batch = self.augs(torch.cat(cutouts, dim=0))
-        if self.noise_fac:
-            facs = batch.new_empty([self.cutn, 1, 1, 1]).uniform_(0, self.noise_fac)
-            batch = batch + facs * torch.randn_like(batch)
-        return batch
+#     def forward(self, input):
+#         sideY, sideX = input.shape[2:4]
+#         max_size = min(sideX, sideY)
+#         min_size = min(sideX, sideY, self.cut_size)
+#         cutouts = []
+#         for _ in range(self.cutn):
+#             size = int(torch.rand([])**self.cut_pow * (max_size - min_size) + min_size)
+#             offsetx = torch.randint(0, sideX - size + 1, ())
+#             offsety = torch.randint(0, sideY - size + 1, ())
+#             cutout = input[:, :, offsety:offsety + size, offsetx:offsetx + size]
+#             cutouts.append(resample(cutout, (self.cut_size, self.cut_size)))
+#         batch = self.augs(torch.cat(cutouts, dim=0))
+#         if self.noise_fac:
+#             facs = batch.new_empty([self.cutn, 1, 1, 1]).uniform_(0, self.noise_fac)
+#             batch = batch + facs * torch.randn_like(batch)
+#         return batch
  
  
 def _load_vqgan_model(config_path, checkpoint_path):
@@ -266,9 +271,12 @@ class LatentSpacewalkParameters(object):
     apply_mask: bool = False
     save: bool = True
     display:bool = True
+    cutout_params: 'typingAny' = None
     
     def __post_init__(self):
         self.texts = [phrase.strip() for phrase in self.texts]
+        if self.cutout_params is None:
+            self.cutout_params = CutoutParams()
         
     
     @property
@@ -317,7 +325,12 @@ class Spacewalker(object):
         cut_size = self.perceptor.visual.input_resolution
         self.e_dim = self.model.quantize.e_dim
         f = 2**(self.model.decoder.num_resolutions - 1)
-        self.make_cutouts = MakeCutouts(cut_size, self.cutn, cut_pow=self.cut_pow, noise_fac=self.p.noise_fac)
+        self.make_cutouts = MakeCutouts(
+            cut_params=self.p.cut_params, 
+            cut_size=cut_size, 
+            cutn=self.cutn, 
+            cut_pow=self.cut_pow, 
+            noise_fac=self.p.noise_fac)
         self.n_toks = self.model.quantize.n_e
         self.toksX, self.toksY = self.width // f, self.height // f
         self.sideX, self.sideY = self.toksX * f, self.toksY * f
@@ -535,7 +548,11 @@ class Spacewalker(object):
     def run(self, parameters=None):
         if parameters is not None:
             self.p = parameters
-        self.iter_to_stop_at = self.p.max_iterations + self.ii
+        
+        if self.p.max_iterations < 1:
+            self.iter_to_stop_at = np.inf
+        else:
+            self.iter_to_stop_at = self.p.max_iterations + self.ii
         self.initialize()
         self.flag = GracefulExiter()
         while self.ii < self.iter_to_stop_at:
@@ -562,46 +579,92 @@ class Spacewalker(object):
                     self.mask[row, col] = 0
 
             
+@dataclass
+class CutoutParams(object):
+    color_jitter: dict = default_field({
+        'use': True,
+        'brightness': 0.1,
+        'contrast': 0.1,
+        'saturation': 0.1,
+        'hue': 0.1,
+        'p': 0.5,
+    })
+    random_sharpness: dict = default_field({
+        'use': True,
+        'sharpness': 0.4,
+        'p': 0.7,
+    })
+    random_gaussian: dict = default_field({
+        'use': True,
+        'mean': 0.0,
+        'std': 1.,
+        'p': 0.5,
+    })
+    random_perspective: dict = default_field({
+        'use': True,
+        'distortion_scale': 0.7,
+        'p': 0.7,
+    })
+    random_rotation: dict = default_field({
+        'use': True,
+        'degrees': 15,
+        'p': 0.7,
+    })
+    random_affine: dict = default_field({
+        'use': True,
+        'degrees': '15', 
+        'translate': '0.1', 
+        'shear': 15, 
+        'p': '0.7', 
+        'padding_mode': 'border', 
+        'keepdim': True,
+    })
+    random_elastic_transform: dict = default_field({'p': 0.7})
+    random_thin_place_spline: dict = default_field({
+        'use': True,
+        'scale':0.3, 
+        'same_on_batch':False, 
+        'p': 0.7})
+    random_crop: dict = default_field({'p': 0.5})
+    random_erasing: dict = default_field({
+        'use': True,
+        'scale': (.05, .33), 
+        'ratio': (.3, 1.3), 
+        'same_on_batch': True,
+        'p': 0.5,
+        })
+    random_resized_crop: dict = default_field({
+        'use': True,
+        'scale': (0.1,1),  
+        'ratio': (0.75,1.333), 
+        'cropping_mode': 'resample', 
+        'p': 0.5,
+    })
+    
+    @property
+    def prms(self):
+        return asdict(self)
+    
             
 #https://github.com/nerdyrodent/VQGAN-CLIP/blob/main/generate.py         
 class MakeCutouts(nn.Module):
-    def __init__(self, cut_size, cutn, cut_pow=1., augments=None, noise_fac=0.1):
+    def __init__(self, cutout_params, cut_size, cutn, cut_pow=1., noise_fac=0.1):
         super().__init__()
         self.cut_size = cut_size
         self.cutn = cutn
         self.cut_pow = cut_pow
-        if augments is None:
-            augments = [
-                'Ji', 'Sh', 'Gn', 'Pe', 'Ro', 'Af', 'Et', 'Ts', 'Cr', 'Er', 'Re',
-            ]
-        self.augments = augments
+        self.cutout_params = cutout_params
+        self.cutout_params['random_crop']['size'] = (self.cut_size,self.cut_size)
+        self.cutout_params['random_resized_crop']['size'] = (self.cut_size,self.cut_size)
         
         # Pick your own augments & their order
         augment_list = []
-        for item in self.augments:
-            if item == 'Ji':
-                augment_list.append(K.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1, p=0.5))
-            elif item == 'Sh':
-                augment_list.append(K.RandomSharpness(sharpness=0.4, p=0.7))
-            elif item == 'Gn':
-                augment_list.append(K.RandomGaussianNoise(mean=0.0, std=1., p=0.5))
-            elif item == 'Pe':
-                augment_list.append(K.RandomPerspective(distortion_scale=0.7, p=0.7))
-            elif item == 'Ro':
-                augment_list.append(K.RandomRotation(degrees=15, p=0.7))
-            elif item == 'Af':
-                augment_list.append(K.RandomAffine(degrees=15, translate=0.1, shear=15, p=0.7, padding_mode='border', keepdim=True)) # border, reflection, zeros
-            elif item == 'Et':
-                augment_list.append(K.RandomElasticTransform(p=0.7))
-            elif item == 'Ts':
-                augment_list.append(K.RandomThinPlateSpline(scale=0.3, same_on_batch=False, p=0.7))
-            elif item == 'Cr':
-                augment_list.append(K.RandomCrop(size=(self.cut_size,self.cut_size), p=0.5))
-            elif item == 'Er':
-                augment_list.append(K.RandomErasing(scale=(.05, .33), ratio=(.3, 1.3), same_on_batch=True, p=0.5))
-            elif item == 'Re':
-                augment_list.append(K.RandomResizedCrop(size=(self.cut_size,self.cut_size), scale=(0.1,1),  ratio=(0.75,1.333), cropping_mode='resample', p=0.5))
-        
+        for aug_name, aug_settings in self.cutout_params.items():
+            if aug_settings['use']:
+                params = {key: value for key, value in aug_settings.items() if key != 'use'}
+                aug = getattr(K, aug_name)(**params)
+                augment_list.append(aug)
+            
         # print(augment_list)
         
         self.augs = nn.Sequential(*augment_list)
