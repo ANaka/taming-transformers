@@ -326,7 +326,7 @@ class Spacewalker(object):
         self.e_dim = self.model.quantize.e_dim
         f = 2**(self.model.decoder.num_resolutions - 1)
         self.make_cutouts = MakeCutouts(
-            cut_params=self.p.cut_params, 
+            cutout_params=self.p.cutout_params, 
             cut_size=cut_size, 
             cutn=self.cutn, 
             cut_pow=self.cut_pow, 
@@ -619,13 +619,13 @@ class CutoutParams(object):
         'padding_mode': 'border', 
         'keepdim': True,
     })
-    random_elastic_transform: dict = default_field({'p': 0.7})
+    random_elastic_transform: dict = default_field({'use': True, 'p': 0.7})
     random_thin_place_spline: dict = default_field({
         'use': True,
         'scale':0.3, 
         'same_on_batch':False, 
         'p': 0.7})
-    random_crop: dict = default_field({'p': 0.5})
+    random_crop: dict = default_field({'use': True,'p': 0.5})
     random_erasing: dict = default_field({
         'use': True,
         'scale': (.05, .33), 
