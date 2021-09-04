@@ -640,6 +640,10 @@ class CutoutParams(object):
         'cropping_mode': 'resample', 
         'p': 0.5,
     })
+    random_horizontal_flip: dict = default_field({
+        'use': True,
+        'p': 0.5,
+    })
     
     @property
     def prms(self):
@@ -648,7 +652,7 @@ class CutoutParams(object):
             
 #https://github.com/nerdyrodent/VQGAN-CLIP/blob/main/generate.py         
 class MakeCutouts(nn.Module):
-    def __init__(self, cutout_params, cut_size, cutn, cut_pow=1., noise_fac=0.1):
+    def __init__(self, cutout_params, cut_size, cutn, cut_pow=1., noise_fac=0.1, use_pooling=False):
         super().__init__()
         self.cut_size = cut_size
         self.cutn = cutn
@@ -656,7 +660,7 @@ class MakeCutouts(nn.Module):
         self.cutout_params = cutout_params
         self.cutout_params['random_crop']['size'] = (self.cut_size,self.cut_size)
         self.cutout_params['random_resized_crop']['size'] = (self.cut_size,self.cut_size)
-        
+        self.use_pooling = use_pooling
         # Pick your own augments & their order
         self.augment_list = []
         for aug_name, aug_settings in self.cutout_params.items():
@@ -695,22 +699,25 @@ class MakeCutouts(nn.Module):
         self.max_pool = nn.AdaptiveMaxPool2d((self.cut_size, self.cut_size))
 
     def forward(self, input):
-        # sideY, sideX = input.shape[2:4]
-        # max_size = min(sideX, sideY)
-        # min_size = min(sideX, sideY, self.cut_size)
+        sideY, sideX = input.shape[2:4]
+        max_size = min(sideX, sideY)
+        min_size = min(sideX, sideY, self.cut_size)
         cutouts = []
         
         for _ in range(self.cutn):
-            # size = int(torch.rand([])**self.cut_pow * (max_size - min_size) + min_size)
-            # offsetx = torch.randint(0, sideX - size + 1, ())
-            # offsety = torch.randint(0, sideY - size + 1, ())
-            # cutout = input[:, :, offsety:offsety + size, offsetx:offsetx + size]
-            # cutouts.append(resample(cutout, (self.cut_size, self.cut_size)))
+            if self.use_pooling:
+                cutout = (self.av_pool(input) + self.max_pool(input))/2
+                cutouts.append(cutout)
+                
+            else:
+                size = int(torch.rand([])**self.cut_pow * (max_size - min_size) + min_size)
+                offsetx = torch.randint(0, sideX - size + 1, ())
+                offsety = torch.randint(0, sideY - size + 1, ())
+                cutout = input[:, :, offsety:offsety + size, offsetx:offsetx + size]
+                cutouts.append(resample(cutout, (self.cut_size, self.cut_size)))
             # cutout = transforms.Resize(size=(self.cut_size, self.cut_size))(input)
             
-            # Use Pooling
-            cutout = (self.av_pool(input) + self.max_pool(input))/2
-            cutouts.append(cutout)
+            
             
         batch = self.augs(torch.cat(cutouts, dim=0))
         
