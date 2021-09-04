@@ -510,7 +510,7 @@ class Spacewalker(object):
                 imageio.imwrite(filename, np.array(img))
                 md = pd.Series(self.p.prms)
                 md['iteration'] = self.ii
-                md['filepath'] = self.root_savedir.joinpath(filename).as_posix()
+                md['filepath'] = self.image_savedir.joinpath(filename).as_posix()
                 self.image_log = self.image_log.append(md, ignore_index=True)
             self.t = out
             self._img = img
@@ -606,7 +606,7 @@ class Spacewalker(object):
             pil_image.save(filename)
             md = pd.Series(self.p.prms)
             md['iteration'] = self.ii
-            md['filepath'] = self.root_savedir.joinpath(filename).as_posix()
+            md['filepath'] = self.image_savedir.joinpath(filename).as_posix()
             self.image_log = self.image_log.append(md, ignore_index=True)
             
     def run(self, parameters=None):
