@@ -467,8 +467,15 @@ class Spacewalker(object):
         tqdm.write(f'i: {self.ii}, loss: {sum(losses).item():g}, losses: {losses_str}')
         self.out_img.save('progress.png', pnginfo=self.png_metadata)
         if self.p.display:
-            display.display(display.Image('progress.png'))
-            clear_output(wait=True)
+            self.display_image('progress.png')
+            
+    def display_image(self, filepath):
+        clear_output(wait=True)
+        display.display(display.Image(filepath))
+        
+    def display_logged_image(self, iteration):
+        clear_output(wait=True)
+        display.display(display.Image(self.image_log.set_index('iteration').loc[iteration, 'filename']))
     
     @property
     def longname(self):
