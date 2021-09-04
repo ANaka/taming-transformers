@@ -699,8 +699,9 @@ class MakeCutouts(nn.Module):
         # self.noise_fac = False
         
         # Pooling
-        self.av_pool = nn.AdaptiveAvgPool2d((self.cut_size, self.cut_size))
-        self.max_pool = nn.AdaptiveMaxPool2d((self.cut_size, self.cut_size))
+        if use_pooling:
+            self.av_pool = nn.AdaptiveAvgPool2d((self.cut_size, self.cut_size))
+            self.max_pool = nn.AdaptiveMaxPool2d((self.cut_size, self.cut_size))
 
     def forward(self, input):
         sideY, sideX = input.shape[2:4]
