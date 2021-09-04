@@ -363,7 +363,7 @@ class Spacewalker(object):
     @property
     def last_saved_filename(self):
         try:
-            return self.image_log.iloc[-1]['filename']
+            return self.image_log.iloc[-1]['filepath']
         except:
             return None
         
@@ -477,12 +477,12 @@ class Spacewalker(object):
         
     def display_logged_image(self, iteration=None, index=None):
         if index is None:
-            self.display_image(self.image_log.set_index('iteration').loc[iteration, 'filename'])
+            self.display_image(self.image_log.set_index('iteration').loc[iteration, 'filepath'])
         else:
-            self.display_image(self.image_log.iloc[index]['filename'])
+            self.display_image(self.image_log.iloc[index]['filepath'])
             
     def display_last_image(self):
-        self.display_image(self.image_log.iloc[-1]['filename'])
+        self.display_image(self.image_log.iloc[-1]['filepath'])
     
     @property
     def longname(self):
@@ -510,7 +510,7 @@ class Spacewalker(object):
                 imageio.imwrite(filename, np.array(img))
                 md = pd.Series(self.p.prms)
                 md['iteration'] = self.ii
-                md['filename'] = filename.as_posix()
+                md['filepath'] = self.root_savedir.joinpath(filename).as_posix()
                 self.image_log = self.image_log.append(md, ignore_index=True)
             self.t = out
             self._img = img
@@ -590,10 +590,25 @@ class Spacewalker(object):
         image_log_ind = self.image_log.set_index('iteration').index.get_loc(checkpoint_to_load['iteration'])
         img_log_to_keep = self.image_log.iloc[:image_log_ind].copy()
         img_log_to_discard = self.image_log.iloc[image_log_ind:].copy()
-        for filename in img_log_to_discard['filename']:
+        for filename in img_log_to_discard['filepath']:
             os.remove(filename)
         self.image_log = img_log_to_keep
                 
+    def log_initial_image(self, n_copies=1):
+        if self.p.init_from_last_saved_image and (self.last_saved_filename is not None):
+            img_to_load = self.last_saved_filename
+        else:
+            img_to_load = self.p.initial_image
+        pil_image = Image.open(img_to_load).convert('RGB')
+        pil_image = pil_image.resize((self.sideX, self.sideY), Image.LANCZOS)
+        filename = self.image_savedir.joinpath(f'{self.ii:04}-{self.longname}.png')
+        for ii in range(n_copies):
+            pil_image.save(filename)
+            md = pd.Series(self.p.prms)
+            md['iteration'] = self.ii
+            md['filepath'] = self.root_savedir.joinpath(filename).as_posix()
+            self.image_log = self.image_log.append(md, ignore_index=True)
+            
     def run(self, parameters=None):
         if parameters is not None:
             self.p = parameters
@@ -633,7 +648,7 @@ class Spacewalker(object):
         if video_dir is None:
             video_dir = Path('/content/drive/MyDrive/vqgan/videos') 
         video_name = video_dir.joinpath(video_name).as_posix()
-        filenames = self.image_log['filename'].values
+        filenames = [f.as_posix() for f in self.image_log['filepath'].values]
         
         if duration is not None:
             fps = len(filenames)/duration
