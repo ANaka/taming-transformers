@@ -620,7 +620,7 @@ class CutoutParams(object):
         'keepdim': True,
     })
     random_elastic_transform: dict = default_field({'use': True, 'p': 0.7})
-    random_thin_place_spline: dict = default_field({
+    random_thin_plate_spline: dict = default_field({
         'use': True,
         'scale':0.3, 
         'same_on_batch':False, 
