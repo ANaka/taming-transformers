@@ -350,6 +350,7 @@ class Spacewalker(object):
         self.image_log = pd.DataFrame()
         self.z_log = pd.DataFrame()
         self.saved_zs = []
+        self.checkpoints = pd.DataFrame()
     
     def log_z(self):
         zmd = pd.Series(self.p)
@@ -473,9 +474,12 @@ class Spacewalker(object):
         clear_output(wait=True)
         display.display(display.Image(filepath))
         
-    def display_logged_image(self, iteration):
+    def display_logged_image(self, iteration, index=None):
         clear_output(wait=True)
-        display.display(display.Image(self.image_log.set_index('iteration').loc[iteration, 'filename']))
+        if index is None:
+            display.display(display.Image(self.image_log.set_index('iteration').loc[iteration, 'filename']))
+        else:
+            display.display(display.Image(self.image_log.iloc[index]['filename']))
     
     @property
     def longname(self):
@@ -575,6 +579,17 @@ class Spacewalker(object):
         with torch.no_grad():
             self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
             
+    def log_checkpoint(self):
+        self.checkpoints = self.checkpoints.append(self.image_log.iloc[-1], ignore_index=True)
+        
+    def revert_to_checkpoint(self, row=-1):
+        checkpoint_to_load = self.checkpoints.iloc[row]
+        image_log_ind = self.image_log.set_index('iteration').index.get_loc(checkpoint_to_load['iteration'])
+        img_log_to_keep = self.image_log.iloc[:row].copy()
+        img_log_to_discard = self.image_log.iloc[row+1:].copy()
+        for filename in img_log_to_discard['filename']:
+            os.remove(filename)
+        self.image_log = img_log_to_keep
                 
     def run(self, parameters=None):
         if parameters is not None:
