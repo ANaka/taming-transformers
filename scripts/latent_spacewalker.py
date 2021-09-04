@@ -252,8 +252,7 @@ class LatentSpacewalkParameters(object):
     def prms(self):
         return asdict(self)
     
-
-@lru_cache(maxsize=None)          
+        
 def get_cutouts_transformation(*args, **kwargs):
     return MakeCutouts(*args, **kwargs)
         
@@ -297,13 +296,7 @@ class Spacewalker(object):
         self.cut_size = self.perceptor.visual.input_resolution
         self.e_dim = self.model.quantize.e_dim
         f = 2**(self.model.decoder.num_resolutions - 1)
-        self.make_cutouts = get_cutouts_transformation(
-            cutout_params=self.p.cutout_params.prms, 
-            cut_size=self.cut_size, 
-            cutn=self.cutn, 
-            cut_pow=self.cut_pow, 
-            noise_fac=self.p.noise_fac,
-        )
+        self.update_cutouts()
         self.n_toks = self.model.quantize.n_e
         self.toksX, self.toksY = self.width // f, self.height // f
         self.sideX, self.sideY = self.toksX * f, self.toksY * f
@@ -321,6 +314,15 @@ class Spacewalker(object):
         self.z_log = pd.DataFrame()
         self.saved_zs = []
         self.checkpoints = pd.DataFrame()
+
+    def update_cutouts(self):
+        self.make_cutouts = MakeCutouts(
+            cutout_params=self.p.cutout_params.prms, 
+            cut_size=self.cut_size, 
+            cutn=self.cutn, 
+            cut_pow=self.cut_pow, 
+            noise_fac=self.p.noise_fac,
+        )
 
     def log_z(self):
         zmd = pd.Series(self.p)
