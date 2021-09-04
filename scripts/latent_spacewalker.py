@@ -28,6 +28,7 @@ from torch.nn import functional as F
 from torchvision import transforms
 from torchvision.transforms import functional as TF
 from tqdm.notebook import tqdm
+from collections import OrderedDict
 
 import taming
 
@@ -581,28 +582,14 @@ class Spacewalker(object):
             
 @dataclass
 class CutoutParams(object):
-    color_jitter: dict = default_field({
+    random_horizontal_flip: dict = default_field({
         'use': True,
-        'brightness': 0.1,
-        'contrast': 0.1,
-        'saturation': 0.1,
-        'hue': 0.1,
         'p': 0.5,
     })
+    
     random_sharpness: dict = default_field({
         'use': True,
         'sharpness': 0.4,
-        'p': 0.7,
-    })
-    random_gaussian_noise: dict = default_field({
-        'use': True,
-        'mean': 0.0,
-        'std': 1.,
-        'p': 0.5,
-    })
-    random_perspective: dict = default_field({
-        'use': True,
-        'distortion_scale': 0.7,
         'p': 0.7,
     })
     random_rotation: dict = default_field({
@@ -619,6 +606,13 @@ class CutoutParams(object):
         'padding_mode': 'border', 
         'keepdim': True,
     })
+    
+    random_perspective: dict = default_field({
+        'use': True,
+        'distortion_scale': 0.7,
+        'p': 0.7,
+    })
+    
     random_elastic_transform: dict = default_field({'use': True, 'p': 0.7})
     random_thin_plate_spline: dict = default_field({
         'use': True,
@@ -640,14 +634,24 @@ class CutoutParams(object):
         'cropping_mode': 'resample', 
         'p': 0.5,
     })
-    random_horizontal_flip: dict = default_field({
+    random_gaussian_noise: dict = default_field({
         'use': True,
+        'mean': 0.0,
+        'std': 1.,
+        'p': 0.5,
+    })
+    color_jitter: dict = default_field({
+        'use': True,
+        'brightness': 0.1,
+        'contrast': 0.1,
+        'saturation': 0.1,
+        'hue': 0.1,
         'p': 0.5,
     })
     
     @property
     def prms(self):
-        return asdict(self)
+        return OrderedDict(asdict(self))
     
             
 #https://github.com/nerdyrodent/VQGAN-CLIP/blob/main/generate.py         
