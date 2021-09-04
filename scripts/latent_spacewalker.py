@@ -32,7 +32,7 @@ from torchvision.transforms import functional as TF
 from tqdm.notebook import tqdm
 from collections import OrderedDict
 import pandas as pd
-
+from functools import lru_cache
 import taming
 
 
@@ -162,41 +162,6 @@ def parse_prompt(prompt):
     vals = vals + ['', '1', '-inf'][len(vals):]
     return vals[0], float(vals[1]), float(vals[2])
  
-# class MakeCutouts(nn.Module):
-#     def __init__(self, cut_size, cutn, cut_pow=1., noise_fac=0.1):
-#         super().__init__()
-#         self.cut_size = cut_size
-#         self.cutn = cutn
-#         self.cut_pow = cut_pow
-#         self.augs = nn.Sequential(
-#             K.RandomHorizontalFlip(p=0.5),
-#             # K.RandomSolarize(0.01, 0.01, p=0.7),
-#             K.RandomSharpness(0.3,p=0.4),
-#             K.RandomAffine(degrees=30, translate=0.1, p=0.8, padding_mode='border'),
-#             K.RandomPerspective(0.2,p=0.4),
-#             K.ColorJitter(hue=0.01, saturation=0.01, p=0.7),
-# #             K.ColorJitter(hue=0.01, saturation=0.01, p=0.2),
-#         )
-#         self.noise_fac = noise_fac
- 
- 
-#     def forward(self, input):
-#         sideY, sideX = input.shape[2:4]
-#         max_size = min(sideX, sideY)
-#         min_size = min(sideX, sideY, self.cut_size)
-#         cutouts = []
-#         for _ in range(self.cutn):
-#             size = int(torch.rand([])**self.cut_pow * (max_size - min_size) + min_size)
-#             offsetx = torch.randint(0, sideX - size + 1, ())
-#             offsety = torch.randint(0, sideY - size + 1, ())
-#             cutout = input[:, :, offsety:offsety + size, offsetx:offsetx + size]
-#             cutouts.append(resample(cutout, (self.cut_size, self.cut_size)))
-#         batch = self.augs(torch.cat(cutouts, dim=0))
-#         if self.noise_fac:
-#             facs = batch.new_empty([self.cutn, 1, 1, 1]).uniform_(0, self.noise_fac)
-#             batch = batch + facs * torch.randn_like(batch)
-#         return batch
- 
  
 def _load_vqgan_model(config_path, checkpoint_path):
     config = OmegaConf.load(config_path)
@@ -287,7 +252,10 @@ class LatentSpacewalkParameters(object):
     def prms(self):
         return asdict(self)
     
-             
+
+@lru_cache(maxsize=None)          
+def get_cutouts_transformation(*args, **kwargs):
+    return MakeCutouts(*args, **kwargs)
         
         
 class Spacewalker(object):
@@ -326,15 +294,16 @@ class Spacewalker(object):
         self.perceptor = load_clip_model().to(self.device)
         
         
-        cut_size = self.perceptor.visual.input_resolution
+        self.cut_size = self.perceptor.visual.input_resolution
         self.e_dim = self.model.quantize.e_dim
         f = 2**(self.model.decoder.num_resolutions - 1)
-        self.make_cutouts = MakeCutouts(
+        self.make_cutouts = get_cutouts_transformation(
             cutout_params=self.p.cutout_params.prms, 
-            cut_size=cut_size, 
+            cut_size=self.cut_size, 
             cutn=self.cutn, 
             cut_pow=self.cut_pow, 
-            noise_fac=self.p.noise_fac)
+            noise_fac=self.p.noise_fac,
+        )
         self.n_toks = self.model.quantize.n_e
         self.toksX, self.toksY = self.width // f, self.height // f
         self.sideX, self.sideY = self.toksX * f, self.toksY * f
@@ -352,7 +321,7 @@ class Spacewalker(object):
         self.z_log = pd.DataFrame()
         self.saved_zs = []
         self.checkpoints = pd.DataFrame()
-    
+
     def log_z(self):
         zmd = pd.Series(self.p)
         zmd['iteration'] = self.ii
@@ -731,7 +700,9 @@ class CutoutParams(object):
         return OrderedDict(asdict(self))
     
             
-#https://github.com/nerdyrodent/VQGAN-CLIP/blob/main/generate.py         
+#https://github.com/nerdyrodent/VQGAN-CLIP/blob/main/generate.py 
+# 
+
 class MakeCutouts(nn.Module):
     def __init__(self, cutout_params, cut_size, cutn, cut_pow=1., noise_fac=0.1, use_pooling=False):
         super().__init__()
