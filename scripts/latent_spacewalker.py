@@ -19,6 +19,7 @@ import kornia.augmentation as K
 import numpy as np
 import torch
 from IPython import display
+from IPython.display import clear_output
 from omegaconf import OmegaConf
 from PIL import Image, ImageFile
 from PIL.PngImagePlugin import PngInfo
@@ -29,6 +30,7 @@ from torchvision import transforms
 from torchvision.transforms import functional as TF
 from tqdm.notebook import tqdm
 from collections import OrderedDict
+import pandas as pd
 
 import taming
 
@@ -343,8 +345,25 @@ class Spacewalker(object):
         self.cropper = transforms.functional.crop
         self.padder = transforms.functional.pad
         self.ii = 0
-        self.last_saved_filename = None
+        
         self.mask = torch.tensor(np.ones((self.sideY, self.sideX))).float().to(self.device)
+        self.image_log = pd.DataFrame()
+        self.z_log = pd.DataFrame()
+        self.saved_zs = []
+    
+    def log_z(self):
+        zmd = pd.Series(self.p)
+        zmd['iteration'] = self.ii
+        zmd['z_ind'] = len(self.saved_zs)
+        self.z_log = self.z_log.append(zmd, ignore_index=True)
+        self.saved_zs.append(self.z.detach().cpu().numpy())
+    
+    @property
+    def last_saved_filename(self):
+        try:
+            return self.image_log.iloc[-1]['filename']
+        except:
+            return None
         
     def reset_mask(self):
         self.mask = torch.tensor(np.ones((self.sideY, self.sideX))).float().to(self.device)
@@ -449,6 +468,7 @@ class Spacewalker(object):
         self.out_img.save('progress.png', pnginfo=self.png_metadata)
         if self.p.display:
             display.display(display.Image('progress.png'))
+            clear_output(wait=True)
     
     @property
     def longname(self):
@@ -474,7 +494,10 @@ class Spacewalker(object):
             filename = self.image_savedir.joinpath(f'{self.ii:04}-{self.longname}.png')
             if self.p.save:
                 imageio.imwrite(filename, np.array(img))
-                self.last_saved_filename = filename.as_posix()
+                md = pd.Series(self.p.prms)
+                md['iteration'] = self.ii
+                md['filename'] = filename.as_posix()
+                self.image_log = self.image_log.append(md, ignore_index=True)
             self.t = out
             self._img = img
             
