@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+import moviepy
 import clip
 import fn
 import imageio
@@ -625,6 +626,21 @@ class Spacewalker(object):
                 dist = ((row - mask_center[0]) ** 2 + (col - mask_center[1]) ** 2) ** 0.5
                 if dist < radius:
                     self.mask[row, col] = 0
+                    
+    def make_video(self, video_name=None, video_dir=None, fps=10, duration=None):
+        now = datetime.now().strftime('%H%M%S_')
+        video_name = f'{self.nft_id}_{now}_video_iter{self.ii}.mp4'
+        if video_dir is None:
+            video_dir = Path('/content/drive/MyDrive/vqgan/videos') 
+        video_name = video_dir.joinpath(video_name).as_posix()
+        filenames = [f.as_posix() for f in self.image_log['filename'].values]
+        
+        if duration is not None:
+            total_frames = len(self.image_log)
+            fps = len(filenames)/duration
+        
+        clipout = moviepy.video.io.ImageSequenceClip.ImageSequenceClip(filenames, fps=fps)
+        clipout.write_videofile(video_name)
 
             
 @dataclass
