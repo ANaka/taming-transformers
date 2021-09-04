@@ -633,10 +633,9 @@ class Spacewalker(object):
         if video_dir is None:
             video_dir = Path('/content/drive/MyDrive/vqgan/videos') 
         video_name = video_dir.joinpath(video_name).as_posix()
-        filenames = [f.as_posix() for f in self.image_log['filename'].values]
+        filenames = self.image_log['filename'].values
         
         if duration is not None:
-            total_frames = len(self.image_log)
             fps = len(filenames)/duration
         
         clipout = moviepy.video.io.ImageSequenceClip.ImageSequenceClip(filenames, fps=fps)
