@@ -474,12 +474,14 @@ class Spacewalker(object):
         clear_output(wait=True)
         display.display(display.Image(filepath))
         
-    def display_logged_image(self, iteration, index=None):
-        clear_output(wait=True)
+    def display_logged_image(self, iteration=None, index=None):
         if index is None:
-            display.display(display.Image(self.image_log.set_index('iteration').loc[iteration, 'filename']))
+            self.display_image(self.image_log.set_index('iteration').loc[iteration, 'filename'])
         else:
-            display.display(display.Image(self.image_log.iloc[index]['filename']))
+            self.display_image(self.image_log.iloc[index]['filename'])
+            
+    def display_last_image(self):
+        self.display_image(self.image_log.iloc[-1]['filename'])
     
     @property
     def longname(self):
@@ -585,8 +587,8 @@ class Spacewalker(object):
     def revert_to_checkpoint(self, row=-1):
         checkpoint_to_load = self.checkpoints.iloc[row]
         image_log_ind = self.image_log.set_index('iteration').index.get_loc(checkpoint_to_load['iteration'])
-        img_log_to_keep = self.image_log.iloc[:row].copy()
-        img_log_to_discard = self.image_log.iloc[row+1:].copy()
+        img_log_to_keep = self.image_log.iloc[:image_log_ind].copy()
+        img_log_to_discard = self.image_log.iloc[image_log_ind:].copy()
         for filename in img_log_to_discard['filename']:
             os.remove(filename)
         self.image_log = img_log_to_keep
