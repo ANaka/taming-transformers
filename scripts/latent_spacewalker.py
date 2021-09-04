@@ -300,7 +300,7 @@ class Spacewalker(object):
         cut_pow: float = 1.,
         width: int = 640,
         height: int = 480,
-        root_savedir: str = 'steps',
+        root_savedir: str = '/content/steps',
         nft_id:str = None,
         models_dir='', # '/content/drive/MyDrive/vqgan_models'
         ):
@@ -648,7 +648,7 @@ class Spacewalker(object):
         if video_dir is None:
             video_dir = Path('/content/drive/MyDrive/vqgan/videos') 
         video_name = video_dir.joinpath(video_name).as_posix()
-        filenames = [f.as_posix() for f in self.image_log['filepath'].values]
+        filenames = [f for f in self.image_log['filepath'].values]
         
         if duration is not None:
             fps = len(filenames)/duration
