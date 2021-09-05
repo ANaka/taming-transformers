@@ -22,7 +22,7 @@ import torch
 from IPython import display
 from IPython.display import clear_output
 from omegaconf import OmegaConf
-from PIL import Image, ImageFile
+from PIL import Image, ImageFile, ImageFilter
 from PIL.PngImagePlugin import PngInfo
 from taming.models import cond_transformer, vqgan
 from torch import nn, optim
@@ -239,6 +239,7 @@ class LatentSpacewalkParameters(object):
     pan_fill: int = 0
     noise_fac:float = 0.1
     apply_mask: bool = False
+    apply_output_mask: bool = False
     save: bool = True
     display:bool = True
     cutout_params: 'typingAny' = None
@@ -315,7 +316,8 @@ class Spacewalker(object):
         self.z_log = pd.DataFrame()
         self.saved_zs = []
         self.checkpoints = pd.DataFrame()
-
+        self.output_mask = np.ones((self.sideY, self.sideX, 3))
+        
     def update_cutouts(self):
         self.make_cutouts = MakeCutouts(
             cutout_params=self.p.cutout_params.prms, 
@@ -325,6 +327,8 @@ class Spacewalker(object):
             noise_fac=self.p.noise_fac,
         )
 
+        
+    
     def log_z(self):
         zmd = pd.Series(self.p)
         zmd['iteration'] = self.ii
@@ -384,16 +388,20 @@ class Spacewalker(object):
         else:
             img_to_load = self.p.initial_image
             
-        if img_to_load is not None:
+        if isinstance(img_to_load, float) or isinstance(img_to_load, int):
+            # this is kinda cludgey
+            image = np.ones((self.sideX, self.sideY)) * img_to_load + np.random.randint(0, 10, (self.sideX, self.sideY))
+            pil_image = Image.fromarray(image).convert('RGB')
+            self.z_current = self.encode_PIL_image(pil_image)
+        elif isinstance(img_to_load, str) or isinstance(img_to_load, Path):
             pil_image = Image.open(img_to_load).convert('RGB')
             pil_image = pil_image.resize((self.sideX, self.sideY), Image.LANCZOS)
             self.z_current = self.encode_PIL_image(pil_image)
-            return self.z_current
         else:
             one_hot = F.one_hot(torch.randint(self.n_toks, [self.toksY * self.toksX], device=self.device), self.n_toks).float()
             z = one_hot @ self.model.quantize.embedding.weight
             self.z_current = z.view([-1, self.toksY, self.toksX, self.e_dim]).permute(0, 3, 1, 2)
-            return self.z_current
+        return self.z_current
         
         
     def set_z_orig(self):
@@ -434,17 +442,7 @@ class Spacewalker(object):
         self.encode_prompts()
         
             
-    def synth(self, z):
-        z_q = vector_quantize(z.movedim(1, 3), self.model.quantize.embedding.weight).movedim(3, 1)
-        return clamp_with_grad(self.model.decode(z_q).add(1).div(2), 0, 1)
     
-    @torch.no_grad()
-    def checkin(self, losses):
-        losses_str = ', '.join(f'{loss.item():g}' for loss in losses)
-        tqdm.write(f'i: {self.ii}, loss: {sum(losses).item():g}, losses: {losses_str}')
-        self.out_img.save('progress.png', pnginfo=self.png_metadata)
-        if self.p.display:
-            self.display_image('progress.png')
             
     def display_image(self, filepath):
         clear_output(wait=True)
@@ -463,14 +461,23 @@ class Spacewalker(object):
     def longname(self):
         return ''.join([self.nft_id] + [s.replace(' ', '_') for s in self.p.texts])
     
+    def synth(self, z):
+        z_q = vector_quantize(z.movedim(1, 3), self.model.quantize.embedding.weight).movedim(3, 1)
+        return clamp_with_grad(self.model.decode(z_q).add(1).div(2), 0, 1)
+    
+    @torch.no_grad()
+    def checkin(self, losses):
+        losses_str = ', '.join(f'{loss.item():g}' for loss in losses)
+        tqdm.write(f'i: {self.ii}, loss: {sum(losses).item():g}, losses: {losses_str}')
+        self.out_img.save('progress.png', pnginfo=self.png_metadata)
+        if self.p.display:
+            self.display_image('progress.png')
+    
     def ascend_txt(self):
-        
         out = self.synth(self.z_current)
         # out = out * self.mask
         iii = self.perceptor.encode_image(self.normalize(self.make_cutouts(out))).float()
-
         result = []
-
         if self.p.init_weight:
             result.append(F.mse_loss(self.z_current, self.z_orig) * self.p.init_weight / 2)
 
@@ -480,27 +487,37 @@ class Spacewalker(object):
         if self.ii % self.p.save_interval == 0:
             img = np.array(out.mul(255).clamp(0, 255)[0].cpu().detach().numpy().astype(np.uint8))[:,:,:]
             img = np.transpose(img, (1, 2, 0))
+            if self.p.apply_output_mask:
+                img = np.multiply(img, self.output_mask)
+            self.out_img = Image.fromarray(img)
             filename = self.image_savedir.joinpath(f'{self.ii:04}-{self.longname}.png')
             if self.p.save:
-                imageio.imwrite(filename, img)
+                self.out_img.save(filename)
                 md = pd.Series(self.p.prms)
                 md['iteration'] = self.ii
                 md['filepath'] = self.image_savedir.joinpath(filename).as_posix()
                 self.image_log = self.image_log.append(md, ignore_index=True)
             self.t = out
             self._img = img
-            
         return result
     
 
 
+    def train(self):
+        self.opt.zero_grad()
+        lossAll = self.ascend_txt()
+        if self.ii % self.p.display_interval == 0:
+            self.checkin(lossAll)
+        loss = sum(lossAll)
+        loss.backward()
+        self.opt.step()
+        with torch.no_grad():
+            self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
+    
     @property
     def img(self):
         return Image.fromarray(self._img)
     
-    @property
-    def out_img(self):
-        return TF.to_pil_image(self.t[0].cpu())
     
     @property
     def mask_img(self):
@@ -559,16 +576,7 @@ class Spacewalker(object):
             self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
         self.reset_optimizer()
         
-    def train(self):
-        self.opt.zero_grad()
-        lossAll = self.ascend_txt()
-        if self.ii % self.p.display_interval == 0:
-            self.checkin(lossAll)
-        loss = sum(lossAll)
-        loss.backward()
-        self.opt.step()
-        with torch.no_grad():
-            self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
+    
             
     def log_checkpoint(self):
         self.checkpoints = self.checkpoints.append(self.image_log.iloc[-1], ignore_index=True)
@@ -609,12 +617,13 @@ class Spacewalker(object):
         self.initialize()
         self.flag = GracefulExiter()
         while self.ii < self.iter_to_stop_at:
-            if self.p.zoom_interval :
-                if self.ii % self.p.zoom_interval == 0:
-                    self.zoom()
+            
             if self.p.pan_interval :
                 if self.ii % self.p.pan_interval == 0:
                     self.pan()
+            if self.p.zoom_interval :
+                if self.ii % self.p.zoom_interval == 0:
+                    self.zoom()
             if self.p.apply_mask:
                 self.apply_mask()
                 
@@ -623,14 +632,19 @@ class Spacewalker(object):
             if self.flag.exit():
                 break
                 
-    def make_circle_mask(self, radius=30):
+    def make_circle_mask(self, radius=None):
+        if radius is None:
+            radius = np.min((self.sideY, self.sideX)) // 2 - 1
         mask_center = [d//2 for d in self.mask.shape]
         for row in range(self.mask.shape[0]):
             for col in range(self.mask.shape[1]):
                 dist = ((row - mask_center[0]) ** 2 + (col - mask_center[1]) ** 2) ** 0.5
                 if dist < radius:
                     self.mask[row, col] = 0
-
+        return radius
+                    
+    def invert_mask(self):
+        self.mask = 1 - self.mask
                     
     def make_video(self, video_name=None, video_dir=None, fps=10, duration=None):
         now = datetime.now().strftime('%H%M%S_')
