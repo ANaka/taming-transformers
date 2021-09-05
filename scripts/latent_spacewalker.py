@@ -561,7 +561,7 @@ class Spacewalker(object):
             *args, **kwargs,
             ).convert('RGB')
         with torch.no_grad():
-            self.z_current, *_ = self.model.encode(np.array(img))
+            self.z_current, *_ = self.encode_PIL_image(img)
             self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
         self.reset_optimizer()
         
