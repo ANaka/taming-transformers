@@ -353,7 +353,7 @@ class Spacewalker(object):
         self.z_log = pd.DataFrame()
         self.saved_zs = []
         self.checkpoints = pd.DataFrame()
-        self.output_mask = np.ones((self.sideY, self.sideX))
+        self.output_mask = np.ones((self.sideY, self.sideX, 3))
     
     def log_z(self):
         zmd = pd.Series(self.p)
