@@ -465,7 +465,7 @@ class Spacewalker(object):
     
     def ascend_txt(self):
         
-        out = self.current_img
+        out = self.current_tensor
         # out = out * self.mask
         iii = self.perceptor.encode_image(self.normalize(self.make_cutouts(out))).float()
 
