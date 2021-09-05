@@ -684,14 +684,14 @@ class Spacewalker(object):
         video_name = f'{self.nft_id}_{now}_video_iter{self.ii}.mp4'
         if video_dir is None:
             video_dir = Path('/content/drive/MyDrive/vqgan/videos') 
-        video_name = video_dir.joinpath(video_name).as_posix()
+        video_name = video_dir.joinpath(video_name)
         filenames = [f for f in self.image_log['filepath'].values]
         
         if duration is not None:
             fps = len(filenames)/duration
         
         clipout = moviepy.video.io.ImageSequenceClip.ImageSequenceClip(filenames, fps=fps)
-        clipout.write_videofile(video_name)
+        clipout.write_videofile(video_name.as_posix())
         if copy_to_local:
             shutil.copy(video_name, video_name.name)
         return video_name
