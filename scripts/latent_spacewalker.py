@@ -624,12 +624,13 @@ class Spacewalker(object):
         self.initialize()
         self.flag = GracefulExiter()
         while self.ii < self.iter_to_stop_at:
-            if self.p.zoom_interval :
-                if self.ii % self.p.zoom_interval == 0:
-                    self.zoom()
+            
             if self.p.pan_interval :
                 if self.ii % self.p.pan_interval == 0:
                     self.pan()
+            if self.p.zoom_interval :
+                if self.ii % self.p.zoom_interval == 0:
+                    self.zoom()
             if self.p.apply_mask:
                 self.apply_mask()
                 
@@ -640,13 +641,16 @@ class Spacewalker(object):
                 
     def make_circle_mask(self, radius=None):
         if radius is None:
-            radius = np.min(self.sideY, self.sideX) // 2
+            radius = np.min(self.sideY, self.sideX) // 2 - 1
         mask_center = [d//2 for d in self.mask.shape]
         for row in range(self.mask.shape[0]):
             for col in range(self.mask.shape[1]):
                 dist = ((row - mask_center[0]) ** 2 + (col - mask_center[1]) ** 2) ** 0.5
                 if dist < radius:
                     self.mask[row, col] = 0
+                    
+    def invert_mask(self):
+        self.mask = 1 - self.mask
                     
     def make_video(self, video_name=None, video_dir=None, fps=10, duration=None):
         now = datetime.now().strftime('%H%M%S_')
