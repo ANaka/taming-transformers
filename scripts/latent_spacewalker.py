@@ -22,7 +22,7 @@ import torch
 from IPython import display
 from IPython.display import clear_output
 from omegaconf import OmegaConf
-from PIL import Image, ImageFile
+from PIL import Image, ImageFile, ImageFilter
 from PIL.PngImagePlugin import PngInfo
 from taming.models import cond_transformer, vqgan
 from torch import nn, optim
@@ -410,7 +410,9 @@ class Spacewalker(object):
             img_to_load = self.p.initial_image
             
         if isinstance(img_to_load, float) or isinstance(img_to_load, int):
-            pil_image = Image.fromarray(np.ones((self.sideX, self.sideY)) * img_to_load).convert('RGB')
+            # this is kinda cludgey
+            image = np.ones((self.sideX, self.sideY)) * img_to_load + np.random.randint(0, 10, (self.sideX, self.sideY))
+            pil_image = Image.fromarray(image).convert('RGB')
             self.z_current = self.encode_PIL_image(pil_image)
         elif isinstance(img_to_load, str) or isinstance(img_to_load, Path):
             pil_image = Image.open(img_to_load).convert('RGB')
@@ -636,7 +638,9 @@ class Spacewalker(object):
             if self.flag.exit():
                 break
                 
-    def make_circle_mask(self, radius=30):
+    def make_circle_mask(self, radius=None):
+        if radius is None:
+            radius = np.min(self.sideY, self.sideX) // 2
         mask_center = [d//2 for d in self.mask.shape]
         for row in range(self.mask.shape[0]):
             for col in range(self.mask.shape[1]):
