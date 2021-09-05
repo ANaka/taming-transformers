@@ -493,16 +493,21 @@ class Spacewalker(object):
 
         if self.ii % self.p.save_interval == 0:
             out_img = self.generate_output_image()
-            filename = self.image_savedir.joinpath(f'{self.ii:04}-{self.longname}.png')
-            if self.p.save:
-                out_img.save(filename)
-                md = pd.Series(self.p.prms)
-                md['iteration'] = self.ii
-                md['filepath'] = self.image_savedir.joinpath(filename).as_posix()
-                self.image_log = self.image_log.append(md, ignore_index=True)
+            self.save_output_image(out_img)
             self.out_img = out_img
             self.img_array = np.array(out_img)
         return result
+    
+    def save_output_image(self, out_img=None):
+        if out_img is None:
+            out_img = self.generate_output_image()
+        filename = self.image_savedir.joinpath(f'{self.ii:04}-{self.longname}.png')
+        if self.p.save:
+            out_img.save(filename)
+            md = pd.Series(self.p.prms)
+            md['iteration'] = self.ii
+            md['filepath'] = self.image_savedir.joinpath(filename).as_posix()
+            self.image_log = self.image_log.append(md, ignore_index=True)
     
     def generate_output_image(self):
         with torch.no_grad():
