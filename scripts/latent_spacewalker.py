@@ -509,15 +509,15 @@ class Spacewalker(object):
             md['filepath'] = self.image_savedir.joinpath(filename).as_posix()
             self.image_log = self.image_log.append(md, ignore_index=True)
     
-    def generate_output_image(self, img):
-        if img is None:
+    def generate_output_image(self, out_img=None):
+        if out_img is None:
             with torch.no_grad():
-                img = self.synth(self.z_current)
-        img = np.array(img.mul(255).clamp(0, 255)[0].cpu().detach().numpy().astype(np.uint8))[:,:,:]
-        img = np.transpose(img, (1, 2, 0))
+                out_img = self.synth(self.z_current)
+        out_img = np.array(out_img.mul(255).clamp(0, 255)[0].cpu().detach().numpy().astype(np.uint8))[:,:,:]
+        out_img = np.transpose(out_img, (1, 2, 0))
         if self.p.apply_output_mask:
-            img = np.multiply(img, self.output_mask).astype('uint8')
-        out_img = Image.fromarray(img).convert('RGB')
+            out_img = np.multiply(out_img, self.output_mask).astype('uint8')
+        out_img = Image.fromarray(out_img).convert('RGB')
         if self.p.apply_pixelsort_post:
             out_img = pixelsort(
                 out_img, 
