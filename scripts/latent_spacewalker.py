@@ -645,7 +645,7 @@ class Spacewalker(object):
                 
     def make_circle_mask(self, radius=None):
         if radius is None:
-            radius = np.min(self.sideY, self.sideX) // 2 - 1
+            radius = np.min((self.sideY, self.sideX)) // 2 - 1
         mask_center = [d//2 for d in self.mask.shape]
         for row in range(self.mask.shape[0]):
             for col in range(self.mask.shape[1]):
