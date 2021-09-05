@@ -243,6 +243,7 @@ class LatentSpacewalkParameters(object):
     save: bool = True
     display:bool = True
     cutout_params: 'typingAny' = None
+    apply_pixelsort: bool = False
     pixelsort_params: dict = default_field({
         'angle':0,
         'interval_function': 'threshold', # 'threshold', 'random', 'edges', 'waves', 'none'
