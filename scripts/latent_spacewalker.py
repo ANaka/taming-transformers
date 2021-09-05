@@ -481,9 +481,9 @@ class Spacewalker(object):
             self.display_image('progress.png')
     
     def ascend_txt(self):
-        out = self.synth(self.z_current)
+        out_img = self.synth(self.z_current)
         # out = out * self.mask
-        iii = self.perceptor.encode_image(self.normalize(self.make_cutouts(out))).float()
+        iii = self.perceptor.encode_image(self.normalize(self.make_cutouts(out_img))).float()
         result = []
         if self.p.init_weight:
             result.append(F.mse_loss(self.z_current, self.z_orig) * self.p.init_weight / 2)
@@ -492,7 +492,7 @@ class Spacewalker(object):
             result.append(prompt(iii))
 
         if self.ii % self.p.save_interval == 0:
-            out_img = self.generate_output_image()
+            out_img = self.generate_output_image(out_img)
             self.save_output_image(out_img)
             self.out_img = out_img
             self.img_array = np.array(out_img)
@@ -509,10 +509,11 @@ class Spacewalker(object):
             md['filepath'] = self.image_savedir.joinpath(filename).as_posix()
             self.image_log = self.image_log.append(md, ignore_index=True)
     
-    def generate_output_image(self):
-        with torch.no_grad():
-            out = self.synth(self.z_current)
-        img = np.array(out.mul(255).clamp(0, 255)[0].cpu().detach().numpy().astype(np.uint8))[:,:,:]
+    def generate_output_image(self, img):
+        if img is None:
+            with torch.no_grad():
+                img = self.synth(self.z_current)
+        img = np.array(img.mul(255).clamp(0, 255)[0].cpu().detach().numpy().astype(np.uint8))[:,:,:]
         img = np.transpose(img, (1, 2, 0))
         if self.p.apply_output_mask:
             img = np.multiply(img, self.output_mask).astype('uint8')
