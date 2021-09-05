@@ -228,6 +228,7 @@ class LatentSpacewalkParameters(object):
     max_iterations: int = None
     learning_rate: float = 0.15
     save_interval: int = 1
+    save_interval_phase: int = 0
     display_interval: int = 3
     init_weight:int = 0
     zoom_interval: int = None
@@ -491,7 +492,7 @@ class Spacewalker(object):
         for prompt in self.pMs:
             result.append(prompt(iii))
 
-        if self.ii % self.p.save_interval == 0:
+        if self.ii % (self.p.save_interval + self.p.save_interval_phase) == 0:
             out_img = self.generate_output_image(out_img)
             self.save_output_image(out_img)
             self.out_img = out_img
