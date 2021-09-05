@@ -488,17 +488,18 @@ class Spacewalker(object):
             img = np.array(out.mul(255).clamp(0, 255)[0].cpu().detach().numpy().astype(np.uint8))[:,:,:]
             img = np.transpose(img, (1, 2, 0))
             if self.p.apply_output_mask:
-                img = np.multiply(img, self.output_mask)
-            self.out_img = Image.fromarray(img).convert('RGB')
+                img = np.multiply(img, self.output_mask).astype('uint8')
+            out_img = Image.fromarray(img).convert('RGB')
             filename = self.image_savedir.joinpath(f'{self.ii:04}-{self.longname}.png')
             if self.p.save:
-                self.out_img.save(filename)
+                out_img.save(filename)
                 md = pd.Series(self.p.prms)
                 md['iteration'] = self.ii
                 md['filepath'] = self.image_savedir.joinpath(filename).as_posix()
                 self.image_log = self.image_log.append(md, ignore_index=True)
-            self.t = out
+            self.img_array = img
             self._img = img
+            self.out_img = out_img
         return result
     
 
@@ -518,14 +519,9 @@ class Spacewalker(object):
     def img(self):
         return Image.fromarray(self._img)
     
-    
     @property
     def mask_img(self):
         return TF.to_pil_image(self.mask.cpu())
-    
-    @property
-    def img_array(self):
-        return self.t.cpu().detach().numpy()[0]
     
     def get_masked_pixels(self):
         mask_row_inds, mask_col_inds = np.where(self.mask.cpu())
