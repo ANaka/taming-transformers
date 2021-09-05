@@ -599,15 +599,16 @@ class Spacewalker(object):
     def pan(self):
         with torch.no_grad():
             top, left, height, width = self.p.y_pan_pixels, self.p.x_pan_pixels, self.sideY, self.sideX
-            self.pan_params = np.array((top, left, height, width))
-            self.panned_output = self.cropper(self.synth(self.z_current), *self.pan_params)
             pad_top = np.max((0, -top))
             pad_bottom = np.max((0, top))
             pad_left = np.max((0, -left))
             pad_right = np.max((0, left))
             self.pad_params = (pad_left, pad_top, pad_right, pad_bottom)
-            self.padded_output = self.padder(self.panned_output, self.pad_params, padding_mode=self.p.pan_padding_mode, fill=self.p.pan_fill)  * 2 - 1
-            self.z_current, *_ = self.model.encode(self.padded_output)
+            self.padded_output = self.padder(self.synth(self.z_current), self.pad_params, padding_mode=self.p.pan_padding_mode, fill=self.p.pan_fill) * 2 - 1
+            
+            self.pan_params = np.array((top, left, height, width))
+            self.panned_output = self.cropper(self.padded_output, *self.pan_params)
+            self.z_current, *_ = self.model.encode(self.panned_output)
             self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
         self.reset_optimizer()
 
