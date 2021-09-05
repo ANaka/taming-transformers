@@ -477,7 +477,7 @@ class Spacewalker(object):
     def checkin(self, losses):
         losses_str = ', '.join(f'{loss.item():g}' for loss in losses)
         tqdm.write(f'i: {self.ii}, loss: {sum(losses).item():g}, losses: {losses_str}')
-        self.out_img.save('progress.png', pnginfo=self.png_metadata)
+        self.generate_output_image().save('progress.png', pnginfo=self.png_metadata)
         if self.p.display:
             self.display_image('progress.png')
     
