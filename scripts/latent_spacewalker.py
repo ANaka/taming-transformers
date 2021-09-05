@@ -243,7 +243,8 @@ class LatentSpacewalkParameters(object):
     save: bool = True
     display:bool = True
     cutout_params: 'typingAny' = None
-    apply_pixelsort: bool = False
+    apply_pixelsort_pre: bool = False
+    apply_pixelsort_post: bool = False
     pixelsort_params: dict = default_field({
         'angle':0,
         'interval_function': 'threshold', # 'threshold', 'random', 'edges', 'waves', 'none'
@@ -563,13 +564,16 @@ class Spacewalker(object):
             self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
         self.reset_optimizer()
 
-    def apply_pixelsort(self, *args, **kwargs):
+    def calc_pixelsort(self, *args, **kwargs):
         with torch.no_grad():
             img = TF.to_pil_image(self.synth(self.z_current).detach().cpu().squeeze())
-        img = pixelsort(
+        return pixelsort(
             img, 
             *args, **kwargs,
             ).convert('RGB')
+
+    def apply_pixelsort(self, *args, **kwargs):
+        img = self.calc_pixelsort(*args, **kwargs)
         with torch.no_grad():
             self.z_current, *_ = self.model.encode(TF.to_tensor(img).to(self.device).unsqueeze(0)   * 2 - 1)
             self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
@@ -632,10 +636,13 @@ class Spacewalker(object):
                     self.zoom()
             if self.p.apply_mask:
                 self.apply_mask()
-            if self.p.apply_pixelsort:
+            if self.p.apply_pixelsort_pre:
                 self.apply_pixelsort(**self.p.pixelsort_params)
                 
             self.train()
+            
+            if self.p.apply_pixelsort_post:
+                self.apply_pixelsort(**self.p.pixelsort_params)
             self.ii += 1
             if self.flag.exit():
                 break
