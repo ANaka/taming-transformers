@@ -478,28 +478,25 @@ class Spacewalker(object):
             result.append(prompt(iii))
 
         if self.ii % self.p.save_interval == 0:
-            # img = np.array(out.mul(255).clamp(0, 255)[0].cpu().detach().numpy().astype(np.uint8))[:,:,:]
-            # img = np.transpose(img, (1, 2, 0))
+            img = np.array(out.mul(255).clamp(0, 255)[0].cpu().detach().numpy().astype(np.uint8))[:,:,:]
+            img = np.transpose(img, (1, 2, 0))
             filename = self.image_savedir.joinpath(f'{self.ii:04}-{self.longname}.png')
             if self.p.save:
-                imageio.imwrite(filename, self.current_array)
+                imageio.imwrite(filename, img)
                 md = pd.Series(self.p.prms)
                 md['iteration'] = self.ii
                 md['filepath'] = self.image_savedir.joinpath(filename).as_posix()
                 self.image_log = self.image_log.append(md, ignore_index=True)
             self.t = out
+            self._img = img
             
         return result
     
 
-    @property
-    def current_array(self):
-        array = np.array(self.synth(self.z_current).mul(255).clamp(0, 255)[0].cpu().detach().numpy().astype(np.uint8))[:,:,:]
-        return np.transpose(array, (1, 2, 0))
 
     @property
     def img(self):
-        return Image.fromarray(self.current_array)
+        return Image.fromarray(self._img)
     
     @property
     def out_img(self):
