@@ -450,9 +450,6 @@ class Spacewalker(object):
         self.z_current.requires_grad_(True)
         self.opt = optim.Adam([self.z_current], lr=self.p.learning_rate)
         self.encode_prompts()
-        
-            
-    
             
     def display_image(self, filepath):
         clear_output(wait=True)
@@ -495,11 +492,7 @@ class Spacewalker(object):
             result.append(prompt(iii))
 
         if self.ii % self.p.save_interval == 0:
-            img = np.array(out.mul(255).clamp(0, 255)[0].cpu().detach().numpy().astype(np.uint8))[:,:,:]
-            img = np.transpose(img, (1, 2, 0))
-            if self.p.apply_output_mask:
-                img = np.multiply(img, self.output_mask).astype('uint8')
-            out_img = Image.fromarray(img).convert('RGB')
+            out_img = self.generate_output_image()
             filename = self.image_savedir.joinpath(f'{self.ii:04}-{self.longname}.png')
             if self.p.save:
                 out_img.save(filename)
@@ -507,12 +500,29 @@ class Spacewalker(object):
                 md['iteration'] = self.ii
                 md['filepath'] = self.image_savedir.joinpath(filename).as_posix()
                 self.image_log = self.image_log.append(md, ignore_index=True)
-            self.img_array = img
-            self._img = img
             self.out_img = out_img
+            self.img_array = np.array(out_img)
         return result
     
+    def generate_output_image(self):
+        with torch.no_grad():
+            out = self.synth(self.z_current)
+        img = np.array(out.mul(255).clamp(0, 255)[0].cpu().detach().numpy().astype(np.uint8))[:,:,:]
+        img = np.transpose(img, (1, 2, 0))
+        if self.p.apply_output_mask:
+            img = np.multiply(img, self.output_mask).astype('uint8')
+        out_img = Image.fromarray(img).convert('RGB')
+        if self.p.apply_pixelsort_post:
+            out_img = pixelsort(
+                out_img, 
+            **self.p.pixelsort_params,
+            ).convert('RGB')
+        return out_img
+            
 
+    def decode_current_z(self):
+        with torch.no_grad():
+            return TF.to_pil_image(self.synth(self.z_current).squeeze())
 
     def train(self):
         self.opt.zero_grad()
@@ -525,9 +535,36 @@ class Spacewalker(object):
         with torch.no_grad():
             self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
     
-    @property
-    def img(self):
-        return Image.fromarray(self._img)
+    def run(self, parameters=None):
+        if parameters is not None:
+            self.p = parameters
+        
+        if self.p.max_iterations < 1:
+            self.iter_to_stop_at = np.inf
+        else:
+            self.iter_to_stop_at = self.p.max_iterations + self.ii
+        self.initialize()
+        self.flag = GracefulExiter()
+        while self.ii < self.iter_to_stop_at:
+            
+            if self.p.pan_interval :
+                if self.ii % self.p.pan_interval == 0:
+                    self.pan()
+            if self.p.zoom_interval :
+                if self.ii % self.p.zoom_interval == 0:
+                    self.zoom()
+            if self.p.apply_mask:
+                self.apply_mask()
+            if self.p.apply_pixelsort_pre:
+                self.apply_pixelsort(**self.p.pixelsort_params)
+                
+            self.train()
+            
+            
+            self.ii += 1
+            if self.flag.exit():
+                break
+    
     
     @property
     def mask_img(self):
@@ -616,36 +653,7 @@ class Spacewalker(object):
             md['filepath'] = self.image_savedir.joinpath(filename).as_posix()
             self.image_log = self.image_log.append(md, ignore_index=True)
             
-    def run(self, parameters=None):
-        if parameters is not None:
-            self.p = parameters
-        
-        if self.p.max_iterations < 1:
-            self.iter_to_stop_at = np.inf
-        else:
-            self.iter_to_stop_at = self.p.max_iterations + self.ii
-        self.initialize()
-        self.flag = GracefulExiter()
-        while self.ii < self.iter_to_stop_at:
-            
-            if self.p.pan_interval :
-                if self.ii % self.p.pan_interval == 0:
-                    self.pan()
-            if self.p.zoom_interval :
-                if self.ii % self.p.zoom_interval == 0:
-                    self.zoom()
-            if self.p.apply_mask:
-                self.apply_mask()
-            if self.p.apply_pixelsort_pre:
-                self.apply_pixelsort(**self.p.pixelsort_params)
-                
-            self.train()
-            
-            if self.p.apply_pixelsort_post:
-                self.apply_pixelsort(**self.p.pixelsort_params)
-            self.ii += 1
-            if self.flag.exit():
-                break
+    
                 
     def make_circle_mask(self, radius=None):
         if radius is None:
