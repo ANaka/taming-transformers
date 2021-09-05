@@ -498,10 +498,14 @@ class Spacewalker(object):
             self.img_array = np.array(out_img)
         return result
     
+    @property
+    def n_saved_images(self):
+        return len(self.image_log)
+    
     def save_output_image(self, out_img=None):
         if out_img is None:
             out_img = self.generate_output_image()
-        filename = self.image_savedir.joinpath(f'{self.ii:04}-{self.longname}.png')
+        filename = self.image_savedir.joinpath(f'{self.n_saved_images+1:04}-{self.longname}.png')
         if self.p.save:
             out_img.save(filename)
             md = pd.Series(self.p.prms)
@@ -675,7 +679,7 @@ class Spacewalker(object):
     def invert_mask(self):
         self.mask = 1 - self.mask
                     
-    def make_video(self, video_name=None, video_dir=None, fps=10, duration=None):
+    def make_video(self, video_name=None, video_dir=None, fps=10, duration=None, copy_to_local=False):
         now = datetime.now().strftime('%H%M%S_')
         video_name = f'{self.nft_id}_{now}_video_iter{self.ii}.mp4'
         if video_dir is None:
@@ -688,6 +692,9 @@ class Spacewalker(object):
         
         clipout = moviepy.video.io.ImageSequenceClip.ImageSequenceClip(filenames, fps=fps)
         clipout.write_videofile(video_name)
+        if copy_to_local:
+            shutil.copy(video_name, video_name.name)
+        return video_name
 
             
 @dataclass
