@@ -489,7 +489,7 @@ class Spacewalker(object):
             img = np.transpose(img, (1, 2, 0))
             if self.p.apply_output_mask:
                 img = np.multiply(img, self.output_mask)
-            self.out_img = Image.fromarray(img)
+            self.out_img = Image.fromarray(img).convert('RGB')
             filename = self.image_savedir.joinpath(f'{self.ii:04}-{self.longname}.png')
             if self.p.save:
                 self.out_img.save(filename)
