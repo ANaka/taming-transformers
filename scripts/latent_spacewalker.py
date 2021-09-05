@@ -465,7 +465,7 @@ class Spacewalker(object):
     
     def ascend_txt(self):
         
-        out = self.current_tensor
+        out = self.synth(self.z_current)
         # out = out * self.mask
         iii = self.perceptor.encode_image(self.normalize(self.make_cutouts(out))).float()
 
@@ -491,13 +491,10 @@ class Spacewalker(object):
             
         return result
     
-    @property
-    def current_tensor(self):
-        return self.synth(self.z_current)
 
     @property
     def current_array(self):
-        array = np.array(self.current_tensor.mul(255).clamp(0, 255)[0].cpu().detach().numpy().astype(np.uint8))[:,:,:]
+        array = np.array(self.synth(self.z_current).mul(255).clamp(0, 255)[0].cpu().detach().numpy().astype(np.uint8))[:,:,:]
         return np.transpose(array, (1, 2, 0))
 
     @property
@@ -560,7 +557,7 @@ class Spacewalker(object):
         
     def apply_mask(self):
         with torch.no_grad():
-            masked_output = self.mask * self.current_tensor * 2 - 1
+            masked_output = self.mask * self.synth(self.z_current) * 2 - 1
             self.z_current, *_ = self.model.encode(masked_output)
             self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
         self.reset_optimizer()
