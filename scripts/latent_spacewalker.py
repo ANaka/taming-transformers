@@ -409,16 +409,18 @@ class Spacewalker(object):
         else:
             img_to_load = self.p.initial_image
             
-        if img_to_load is not None:
+        if isinstance(img_to_load, float) or isinstance(img_to_load, int):
+            pil_image = Image.fromarray(np.ones((self.sideX, self.sideY)) * img_to_load).convert('RGB')
+            self.z_current = self.encode_PIL_image(pil_image)
+        elif isinstance(img_to_load, str) or isinstance(img_to_load, Path):
             pil_image = Image.open(img_to_load).convert('RGB')
             pil_image = pil_image.resize((self.sideX, self.sideY), Image.LANCZOS)
             self.z_current = self.encode_PIL_image(pil_image)
-            return self.z_current
         else:
             one_hot = F.one_hot(torch.randint(self.n_toks, [self.toksY * self.toksX], device=self.device), self.n_toks).float()
             z = one_hot @ self.model.quantize.embedding.weight
             self.z_current = z.view([-1, self.toksY, self.toksX, self.e_dim]).permute(0, 3, 1, 2)
-            return self.z_current
+        return self.z_current
         
         
     def set_z_orig(self):
