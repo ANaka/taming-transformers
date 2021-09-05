@@ -636,11 +636,10 @@ class Spacewalker(object):
     
             
     def log_checkpoint(self):
-        self.checkpoints = self.checkpoints.append(self.image_log.iloc[-1], ignore_index=True)
+        self.checkpoints = self.checkpoints.append(self.image_log.iloc[-1])
         
     def revert_to_checkpoint(self, row=-1):
-        checkpoint_to_load = self.checkpoints.iloc[row]
-        image_log_ind = self.image_log.set_index('iteration').index.get_loc(checkpoint_to_load['iteration'])
+        image_log_ind = self.image_log.index.get_loc(self.checkpoints.index.to_list()[row])
         img_log_to_keep = self.image_log.iloc[:image_log_ind].copy()
         img_log_to_discard = self.image_log.iloc[image_log_ind:].copy()
         for filename in img_log_to_discard['filepath']:
