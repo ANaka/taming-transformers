@@ -465,17 +465,7 @@ class Spacewalker(object):
         self.encode_prompts()
         
             
-    def synth(self, z):
-        z_q = vector_quantize(z.movedim(1, 3), self.model.quantize.embedding.weight).movedim(3, 1)
-        return clamp_with_grad(self.model.decode(z_q).add(1).div(2), 0, 1)
     
-    @torch.no_grad()
-    def checkin(self, losses):
-        losses_str = ', '.join(f'{loss.item():g}' for loss in losses)
-        tqdm.write(f'i: {self.ii}, loss: {sum(losses).item():g}, losses: {losses_str}')
-        self.out_img.save('progress.png', pnginfo=self.png_metadata)
-        if self.p.display:
-            self.display_image('progress.png')
             
     def display_image(self, filepath):
         clear_output(wait=True)
@@ -494,14 +484,23 @@ class Spacewalker(object):
     def longname(self):
         return ''.join([self.nft_id] + [s.replace(' ', '_') for s in self.p.texts])
     
+    def synth(self, z):
+        z_q = vector_quantize(z.movedim(1, 3), self.model.quantize.embedding.weight).movedim(3, 1)
+        return clamp_with_grad(self.model.decode(z_q).add(1).div(2), 0, 1)
+    
+    @torch.no_grad()
+    def checkin(self, losses):
+        losses_str = ', '.join(f'{loss.item():g}' for loss in losses)
+        tqdm.write(f'i: {self.ii}, loss: {sum(losses).item():g}, losses: {losses_str}')
+        self.out_img.save('progress.png', pnginfo=self.png_metadata)
+        if self.p.display:
+            self.display_image('progress.png')
+    
     def ascend_txt(self):
-        
         out = self.synth(self.z_current)
         out = out * self.mask
         iii = self.perceptor.encode_image(self.normalize(self.make_cutouts(out))).float()
-
         result = []
-
         if self.p.init_weight:
             result.append(F.mse_loss(self.z_current, self.z_orig) * self.p.init_weight / 2)
 
@@ -513,25 +512,33 @@ class Spacewalker(object):
             img = np.transpose(img, (1, 2, 0))
             if self.p.apply_output_mask:
                 img = np.multiply(img, self.output_mask)
+            self.out_img = Image.fromarray(img)
             filename = self.image_savedir.joinpath(f'{self.ii:04}-{self.longname}.png')
             if self.p.save:
-                imageio.imwrite(filename, img)
+                self.out_img.save(filename)
                 md = pd.Series(self.p.prms)
                 md['iteration'] = self.ii
                 md['filepath'] = self.image_savedir.joinpath(filename).as_posix()
                 self.image_log = self.image_log.append(md, ignore_index=True)
             self.t = out
             self._img = img
-            
         return result
+    
+    def train(self):
+        self.opt.zero_grad()
+        lossAll = self.ascend_txt()
+        if self.ii % self.p.display_interval == 0:
+            self.checkin(lossAll)
+        loss = sum(lossAll)
+        loss.backward()
+        self.opt.step()
+        with torch.no_grad():
+            self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
     
     @property
     def img(self):
         return Image.fromarray(self._img)
     
-    @property
-    def out_img(self):
-        return TF.to_pil_image(self.t[0].cpu())
     
     @property
     def mask_img(self):
@@ -579,16 +586,7 @@ class Spacewalker(object):
             self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
         self.reset_optimizer()
         
-    def train(self):
-        self.opt.zero_grad()
-        lossAll = self.ascend_txt()
-        if self.ii % self.p.display_interval == 0:
-            self.checkin(lossAll)
-        loss = sum(lossAll)
-        loss.backward()
-        self.opt.step()
-        with torch.no_grad():
-            self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
+    
             
     def log_checkpoint(self):
         self.checkpoints = self.checkpoints.append(self.image_log.iloc[-1], ignore_index=True)
