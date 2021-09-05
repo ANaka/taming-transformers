@@ -34,6 +34,7 @@ from collections import OrderedDict
 import pandas as pd
 from functools import lru_cache
 import taming
+from pixelsort import pixelsort
 
 
 def default_field(obj):
@@ -461,8 +462,8 @@ class Spacewalker(object):
     
     def ascend_txt(self):
         
-        out = self.synth(self.z_current)
-        out = out * self.mask
+        out = self.current_img
+        # out = out * self.mask
         iii = self.perceptor.encode_image(self.normalize(self.make_cutouts(out))).float()
 
         result = []
@@ -474,23 +475,31 @@ class Spacewalker(object):
             result.append(prompt(iii))
 
         if self.ii % self.p.save_interval == 0:
-            img = np.array(out.mul(255).clamp(0, 255)[0].cpu().detach().numpy().astype(np.uint8))[:,:,:]
-            img = np.transpose(img, (1, 2, 0))
+            # img = np.array(out.mul(255).clamp(0, 255)[0].cpu().detach().numpy().astype(np.uint8))[:,:,:]
+            # img = np.transpose(img, (1, 2, 0))
             filename = self.image_savedir.joinpath(f'{self.ii:04}-{self.longname}.png')
             if self.p.save:
-                imageio.imwrite(filename, np.array(img))
+                imageio.imwrite(filename, self.current_array)
                 md = pd.Series(self.p.prms)
                 md['iteration'] = self.ii
                 md['filepath'] = self.image_savedir.joinpath(filename).as_posix()
                 self.image_log = self.image_log.append(md, ignore_index=True)
             self.t = out
-            self._img = img
             
         return result
     
     @property
+    def current_tensor(self):
+        return self.synth(self.z_current)
+
+    @property
+    def current_array(self):
+        array = np.array(self.current_tensor.mul(255).clamp(0, 255)[0].cpu().detach().numpy().astype(np.uint8))[:,:,:]
+        return np.transpose(array, (1, 2, 0))
+
+    @property
     def img(self):
-        return Image.fromarray(self._img)
+        return Image.fromarray(self.current_array)
     
     @property
     def out_img(self):
@@ -533,11 +542,22 @@ class Spacewalker(object):
             self.padded_output = self.padder(self.panned_output, self.pad_params, padding_mode=self.p.pan_padding_mode, fill=self.p.pan_fill)  * 2 - 1
             self.z_current, *_ = self.model.encode(self.padded_output)
             self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
-        self.reset_optimizer()    
+        self.reset_optimizer()
+
+    def apply_pixelsort(self, *args, **kwargs):
+        
+        img = pixelsort(
+            self.img, 
+            *args, **kwargs,
+            ).convert('RGB')
+        with torch.no_grad():
+            self.z_current, *_ = self.model.encode(np.array(img))
+            self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
+        self.reset_optimizer()
         
     def apply_mask(self):
         with torch.no_grad():
-            masked_output = self.mask * self.synth(self.z_current) * 2 - 1
+            masked_output = self.mask * self.current_tensor * 2 - 1
             self.z_current, *_ = self.model.encode(masked_output)
             self.z_current.copy_(self.z_current.maximum(self.z_min).minimum(self.z_max))
         self.reset_optimizer()
