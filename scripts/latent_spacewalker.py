@@ -341,6 +341,9 @@ class Spacewalker(object):
         
     def reset_mask(self):
         self.mask = torch.tensor(np.ones((self.sideY, self.sideX))).float().to(self.device)
+
+    def invert_mask(self):
+        self.mask = 1 - self.mask
         
     @property
     def size(self):
@@ -584,6 +587,7 @@ class Spacewalker(object):
         for filename in img_log_to_discard['filepath']:
             os.remove(filename)
         self.image_log = img_log_to_keep
+        self.display_last_image()
                 
     def log_initial_image(self, n_copies=1):
         if self.p.init_from_last_saved_image and (self.last_saved_filename is not None):
@@ -632,6 +636,7 @@ class Spacewalker(object):
                 dist = ((row - mask_center[0]) ** 2 + (col - mask_center[1]) ** 2) ** 0.5
                 if dist < radius:
                     self.mask[row, col] = 0
+
                     
     def make_video(self, video_name=None, video_dir=None, fps=10, duration=None):
         now = datetime.now().strftime('%H%M%S_')
