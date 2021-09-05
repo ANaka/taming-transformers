@@ -273,6 +273,7 @@ class LatentSpacewalkParameters(object):
     pan_fill: int = 0
     noise_fac:float = 0.1
     apply_mask: bool = False
+    apply_output_mask: bool = False
     save: bool = True
     display:bool = True
     cutout_params: 'typingAny' = None
@@ -352,6 +353,7 @@ class Spacewalker(object):
         self.z_log = pd.DataFrame()
         self.saved_zs = []
         self.checkpoints = pd.DataFrame()
+        self.output_mask = np.ones((self.sideY, self.sideX))
     
     def log_z(self):
         zmd = pd.Series(self.p)
@@ -509,9 +511,11 @@ class Spacewalker(object):
         if self.ii % self.p.save_interval == 0:
             img = np.array(out.mul(255).clamp(0, 255)[0].cpu().detach().numpy().astype(np.uint8))[:,:,:]
             img = np.transpose(img, (1, 2, 0))
+            if self.p.apply_output_mask:
+                img = np.multiply(img, self.output_mask)
             filename = self.image_savedir.joinpath(f'{self.ii:04}-{self.longname}.png')
             if self.p.save:
-                imageio.imwrite(filename, np.array(img))
+                imageio.imwrite(filename, img)
                 md = pd.Series(self.p.prms)
                 md['iteration'] = self.ii
                 md['filepath'] = self.image_savedir.joinpath(filename).as_posix()
@@ -648,6 +652,7 @@ class Spacewalker(object):
                 dist = ((row - mask_center[0]) ** 2 + (col - mask_center[1]) ** 2) ** 0.5
                 if dist < radius:
                     self.mask[row, col] = 0
+        return radius
                     
     def invert_mask(self):
         self.mask = 1 - self.mask
