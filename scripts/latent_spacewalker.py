@@ -232,10 +232,10 @@ class LatentSpacewalkParameters(object):
     display_interval: int = 3
     init_weight:int = 0
     zoom_interval: int = None
-    n_pixels_zoom: int = 10
+    zoom_pixels: int = 0
     pan_interval: int = None
-    x_pan_pixels: int = 10
-    y_pan_pixels: int = 10
+    pan_x_pixels: int = 0
+    pan_y_pixels: int = 0
     pan_padding_mode: str = 'edge'
     pan_fill: int = 0
     noise_fac:float = 0.1
@@ -244,8 +244,8 @@ class LatentSpacewalkParameters(object):
     save: bool = True
     display:bool = True
     cutout_params: 'typingAny' = None
-    apply_pixelsort_pre: bool = False
-    apply_pixelsort_post: bool = False
+    apply_pixelsort_pre_interval: int = 0
+    apply_pixelsort_post_interval: int = 0
     pixelsort_params: dict = default_field({
         'angle':0,
         'interval_function': 'threshold', # 'threshold', 'random', 'edges', 'waves', 'none'
@@ -523,7 +523,9 @@ class Spacewalker(object):
         if self.p.apply_output_mask:
             out_img = np.multiply(out_img, self.output_mask).astype('uint8')
         out_img = Image.fromarray(out_img).convert('RGB')
-        if self.p.apply_pixelsort_post:
+        if self.p.apply_pixelsort_post_interval:
+            if self.ii & self.p.apply_pixelsort_post_interval == 0:
+                out_img = pixelsort(out_img)
             out_img = pixelsort(
                 out_img, 
             **self.p.pixelsort_params,
@@ -558,16 +560,17 @@ class Spacewalker(object):
         self.flag = GracefulExiter()
         while self.ii < self.iter_to_stop_at:
             
-            if self.p.pan_interval :
+            if self.p.pan_interval:
                 if self.ii % self.p.pan_interval == 0:
                     self.pan()
-            if self.p.zoom_interval :
+            if self.p.zoom_interval:
                 if self.ii % self.p.zoom_interval == 0:
                     self.zoom()
             if self.p.apply_mask:
                 self.apply_mask()
-            if self.p.apply_pixelsort_pre:
-                self.apply_pixelsort(**self.p.pixelsort_params)
+            if self.p.apply_pixelsort_pre_interval:
+                if self.ii % self.p.apply_pixelsort_pre_interval == 0:
+                    self.apply_pixelsort(**self.p.pixelsort_params)
                 
             self.train()
             
@@ -680,13 +683,24 @@ class Spacewalker(object):
     def invert_mask(self):
         self.mask = 1 - self.mask
                     
-    def make_video(self, video_name=None, video_dir=None, fps=10, duration=None, copy_to_local=False):
+    def make_video(
+        self,
+        fps=10, 
+        start_frame=0,
+        end_frame=None,
+        video_name=None, 
+        video_dir=None, 
+        duration=None, 
+        copy_to_local=False,
+        ):
         now = datetime.now().strftime('%H%M%S_')
         video_name = f'{self.nft_id}_{now}_video_iter{self.ii}.mp4'
         if video_dir is None:
             video_dir = Path('/content/drive/MyDrive/vqgan/videos') 
         video_name = video_dir.joinpath(video_name)
-        filenames = [f for f in self.image_log['filepath'].values]
+        if end_frame is None:
+            end_frame = self.image_log.shape[0]
+        filenames = [f for f in self.image_log.loc[start_frame:end_frame, 'filepath'].values]
         
         if duration is not None:
             fps = len(filenames)/duration
