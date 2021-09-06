@@ -387,7 +387,7 @@ class Spacewalker(object):
     @property
     def zoom_transforms(self):
         zoom_transforms = torch.nn.Sequential(
-            transforms.CenterCrop((self.sideY-self.p.n_pixels_zoom, self.sideX-self.p.n_pixels_zoom)),
+            transforms.CenterCrop((self.sideY-self.p.zoom_pixels, self.sideX-self.p.zoom_pixels)),
             transforms.Resize((self.sideY, self.sideX))
         )
 #         scripted_transforms = torch.jit.script(zoom_transforms)
@@ -602,7 +602,7 @@ class Spacewalker(object):
         
     def pan(self):
         with torch.no_grad():
-            top, left, height, width = self.p.y_pan_pixels, self.p.x_pan_pixels, self.sideY, self.sideX
+            top, left, height, width = self.p.pan_y_pixels, self.p.pan_x_pixels, self.sideY, self.sideX
             pad_top = np.max((0, -top))
             pad_bottom = np.max((0, top))
             pad_left = np.max((0, -left))
