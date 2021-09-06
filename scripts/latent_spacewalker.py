@@ -525,11 +525,10 @@ class Spacewalker(object):
         out_img = Image.fromarray(out_img).convert('RGB')
         if self.p.apply_pixelsort_post_interval:
             if self.ii & self.p.apply_pixelsort_post_interval == 0:
-                out_img = pixelsort(out_img)
-            out_img = pixelsort(
-                out_img, 
-            **self.p.pixelsort_params,
-            ).convert('RGB')
+                out_img = pixelsort(
+                    out_img, 
+                **self.p.pixelsort_params,
+                ).convert('RGB')
         return out_img
             
 
