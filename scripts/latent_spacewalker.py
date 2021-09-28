@@ -524,7 +524,7 @@ class Spacewalker(object):
             out_img = np.multiply(out_img, self.output_mask).astype('uint8')
         out_img = Image.fromarray(out_img).convert('RGB')
         if self.p.apply_pixelsort_post_interval:
-            if self.ii & self.p.apply_pixelsort_post_interval == 0:
+            if self.ii % self.p.apply_pixelsort_post_interval == 0:
                 out_img = pixelsort(
                     out_img, 
                 **self.p.pixelsort_params,
