@@ -254,6 +254,7 @@ class LatentSpacewalkParameters(object):
         'lower_threshold': 0.25,
         'upper_threshold': 0.7,
     })
+    output_transforms: list = default_field([])
     
     def __post_init__(self):
         self.texts = [phrase.strip() for phrase in self.texts]
@@ -491,6 +492,15 @@ class Spacewalker(object):
 
         for prompt in self.pMs:
             result.append(prompt(iii))
+            
+        for tform in self.p.output_transforms:
+            iii = self.perceptor.encode_image(self.normalize(self.make_cutouts(tform(out_img)))).float()
+        
+            if self.p.init_weight:
+                result.append(F.mse_loss(self.z_current, self.z_orig) * self.p.init_weight / 2)
+
+            for prompt in self.pMs:
+                result.append(prompt(iii))
 
         if self.ii % (self.p.save_interval + self.p.save_interval_phase) == 0:
             out_img = self.generate_output_image(out_img)
