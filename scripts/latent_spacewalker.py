@@ -500,8 +500,7 @@ class Spacewalker(object):
             result.append(prompt(iii))
             
         for tform in self.p.output_transforms:
-            iii = self.perceptor.encode_image(self.normalize(tform(out_img))).float()
-
+            iii = self.perceptor.encode_image(self.normalize(self.make_cutouts(tform(out_img)))).float()
             for prompt in self.transform_pMs:
                 result.append(prompt(iii))
 
