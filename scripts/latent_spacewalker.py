@@ -703,6 +703,7 @@ class Spacewalker(object):
         video_dir=None, 
         duration=None, 
         copy_to_local=False,
+        audioclip=None,
         ):
         now = datetime.now().strftime('%H%M%S_')
         video_name = f'{self.nft_id}_{now}_video_iter{self.ii}.mp4'
@@ -717,6 +718,8 @@ class Spacewalker(object):
             fps = len(filenames)/duration
         
         clipout = moviepy.video.io.ImageSequenceClip.ImageSequenceClip(filenames, fps=fps)
+        if audioclip is not None:
+            clipout.set_audio(audioclip)
         clipout.write_videofile(video_name.as_posix())
         if copy_to_local:
             shutil.copy(video_name, video_name.name)
