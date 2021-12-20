@@ -719,7 +719,7 @@ class Spacewalker(object):
         
         clipout = moviepy.video.io.ImageSequenceClip.ImageSequenceClip(filenames, fps=fps)
         if audioclip is not None:
-            clipout.set_audio(audioclip)
+            clipout = clipout.set_audio(audioclip)
         clipout.write_videofile(video_name.as_posix())
         if copy_to_local:
             shutil.copy(video_name, video_name.name)
