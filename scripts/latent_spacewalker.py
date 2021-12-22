@@ -661,6 +661,7 @@ class Spacewalker(object):
         for filename in img_log_to_discard['filepath']:
             os.remove(filename)
         self.image_log = img_log_to_keep
+        self.ii = self.image_log.index[-1]
         self.display_last_image()
                 
     def log_initial_image(self, n_copies=1):
